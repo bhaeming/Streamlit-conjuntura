@@ -113,7 +113,7 @@ pibs = sidra.get_table(
     variable='6561',
     period='all',
     classifications={
-        '11255': '90687,90691,90696,90704,93404,93405,93406'
+        '11255': '90687,90691,90707,90696,90704,93404,93405,93406'
     },
     header='n'
 )
@@ -170,7 +170,7 @@ pib_long
 setores = pib_long["setor"].unique().tolist()
 setores
 
-#Exportando os dados processados
+#Exportando os dados pib
 
 out_dir = BASE_DIR / "data" / "processed"
 

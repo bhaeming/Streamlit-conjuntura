@@ -24,7 +24,7 @@ pf - 21112
 
 --Sidra--
 
-PIB - total tab.5935
+-PIB - total tab.5935
 
 indústria
 agro
@@ -32,14 +32,23 @@ serviços
 consumo das famílias
 investimento
 
-IPP 6904
+-IPP 6904
 BK
 BC
 BI
 
-Produção industrial mensal - tabela 8888 (ano e 12 meses)
+-Produção industrial mensal - tabela 8888 (ano e 12 meses)
 PMC - tab 8190
 PMS - tab 5906
+
+-socioeconcomico
+
+desocupação - 4099
+renda média mensal - 5439
+taxa de informalidade - 8529
+ocupação - 6466
+Pessoas desalentadas - 6813
+
 
 
 

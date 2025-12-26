@@ -135,14 +135,14 @@ ipp = sidra.get_table(
     territorial_level='1',
     ibge_territorial_code='1',
     variable='1394',
-    period='all',
+    period='201501'+'-''202510',
     classifications={
         '543': '33586,33583,33585,33584,33580,33579'
     },
     header='n'
 )
 
-ipp
+ipp.head()
 
 def tidy_sidra_ipp(df: pd.DataFrame) -> pd.DataFrame:
     out = ipp.copy()
@@ -151,11 +151,11 @@ def tidy_sidra_ipp(df: pd.DataFrame) -> pd.DataFrame:
     out["V"] = pd.to_numeric(out["V"], errors="coerce")
 
     # data a partir de D1C (YYYYMM)
-    out["date"] = pd.to_datetime(out["D1C"].astype(str), format="%Y%m", errors="coerce") + pd.offsets.MonthEnd(0)
+    out["date"] = pd.to_datetime(out["D2C"].astype(str), format="%Y%m", errors="coerce") + pd.offsets.MonthEnd(0)
 
     # colunas-alvo
     out = out.rename(columns={
-        "D4N": "setorfe_ipp",
+        "D4N": "setor_ipp",
         "V": "value",
     })[["date", "setor_ipp","value"]]
 
@@ -166,3 +166,65 @@ def tidy_sidra_ipp(df: pd.DataFrame) -> pd.DataFrame:
 
 ipp_long = tidy_sidra_ipp(ipp)
 ipp_long
+
+
+
+ipp_long["setor_ipp"].unique().tolist()
+
+
+# Sócio econômicos
+
+#- desemprego
+
+desemp = sidra.get_table(
+    table_code= 4099,
+    territorial_level='1',
+    ibge_territorial_code='1',
+    variable='4099',
+    period='all',
+    classifications='',
+    header='n'
+)
+desemp
+
+desemprego = desemp.copy()
+desemprego["V"] = pd.to_numeric(desemprego["V"], errors="coerce")
+desemprego["date"] = pd.to_datetime(desemprego["D2C"].astype(str), format="%Y%q", errors="coerce") + pd.offsets.MonthEnd(0)
+desemprego = desemprego.rename(columns={
+    "V": "taxa_desemprego",
+})[["date", "taxa_desemprego"]]
+desemprego
+
+def tidy_sidra_setores(df: pd.DataFrame) -> pd.DataFrame:
+    desemprego = desemp.copy()
+
+    # valor numérico (SIDRA às vezes vem como string)
+    desemprego["V"] = pd.to_numeric(desemprego["V"], errors="coerce")
+
+    # data a partir de D2C (YYYYQQ)
+    desemprego["date"] = sidra_quarter_code_to_date(desemprego["D2C"])
+
+    # colunas-alvo
+    desemprego = desemprego.rename(columns={
+        "D4N": "setor",
+        "V": "taxa_desemprego",
+    })[["date", "setor","taxa_desemprego"]]
+
+    # limpeza básica
+    desemprego = desemprego.dropna(subset=["date", "setor", "taxa_desemprego"]).sort_values(["setor", "date"]).reset_index(drop=True)
+    return desemprego
+
+desemprego_long = tidy_sidra_setores(desemprego)
+desemprego_long
+#ocupação
+
+ocup = sidra.get_table(
+    table_code= 6466,
+    territorial_level='1',
+    ibge_territorial_code='1',
+    variable='4099',
+    period='all',
+    classifications='',
+    header='n'
+)
+ocup

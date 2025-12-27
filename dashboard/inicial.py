@@ -19,12 +19,6 @@ BASE_DIR = Path(__file__).resolve().parents[1]  # dashboard/ -> raiz do projeto
 DATA_DIR = BASE_DIR / "data" / "processed"
 PIB_PATH = DATA_DIR / "pibs_quarterly.parquet"
 
-pib.head()
-pib['setor'].unique()
-
-
-
-
 @st.cache_data(show_spinner=False)
 def load_parquet(path: Path) -> pd.DataFrame:
     df = pd.read_parquet(path)
@@ -86,10 +80,10 @@ def build_pib_figure(pib: pd.DataFrame) -> px.line:
 
     fig = px.line(
         plot_df,
-        x="date",
-        y="value",
+        x="data",
+        y="valor",
         color=dim_col,
-        title="PIB — taxa de variação trimestral (%)"
+        title="PIB — em relação ao mesmo trimestre do ano anterior (%)"
     )
     return fig
 def main() -> None:

@@ -110,7 +110,7 @@ pibs = sidra.get_table(
     table_code=5932,
     territorial_level='1',
     ibge_territorial_code='1',
-    variable='6561',
+    variable='6562',
     period='all',
     classifications={
         '11255': '90687,90691,90707,90696,90704,93404,93405,93406'

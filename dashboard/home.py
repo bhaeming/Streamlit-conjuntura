@@ -1,0 +1,5 @@
+import streamlit as st
+
+st.set_page_config(page_title="Painel de Conjuntura", layout="wide")
+st.title("Painel de Conjuntura do Brasil")
+st.write("Use o menu lateral para navegar entre as páginas.")

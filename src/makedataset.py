@@ -87,8 +87,11 @@ df_sgs
 sgs_wide = reduce(
     lambda left, right: pd.merge(left, right, on="Date", how="outer"),
     df_sgs
-)#.sort_values("Date").reset_index(drop=True)
+)
+sgs_wide
+sgs_wide=sgs_wide.reset_index()
 
+sgs_wide = sgs_wide.rename(columns={"Date": "date"})
 sgs_wide.dropna(inplace=True)
 sgs_wide.head()
 sgs_wide.tail()

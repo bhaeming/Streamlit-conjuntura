@@ -15,7 +15,7 @@ st.title("Preços ao consumidor e ao produtor")
 # -----------------------
 # Caminhos
 # -----------------------
-# Seus arquivos estão em dashboard/, então é parents[1]
+
 BASE_DIR = Path(__file__).resolve().parents[1]  # dashboard/ -> raiz do projeto
 DATA_DIR = BASE_DIR / "data" / "processed"
 

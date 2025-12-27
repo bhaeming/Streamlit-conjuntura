@@ -15,8 +15,8 @@ st.title("Preços ao consumidor e ao produtor")
 BASE_DIR = Path(__file__).resolve().parents[2]  # pages/ -> dashboard/ -> raiz do projeto
 DATA_DIR = BASE_DIR / "data" / "processed"
 
-SGS_PATH = DATA_DIR / "sgs_mensal.parquet"
-IPP_PATH = DATA_DIR / "ipp_mensal.parquet"
+SGS_PATH = DATA_DIR / "sgs_dados.parquet"
+IPP_PATH = DATA_DIR / "ipp_m.parquet"
 
 # -----------------------
 # Loaders

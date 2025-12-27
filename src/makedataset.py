@@ -18,6 +18,7 @@ selic = sgs.get({'selic' : '432'},
 selic
 #tratamento dos dados da selic para mensal
 selic_mensal = selic.resample('M').last().reset_index()
+selic_mensal.rename(columns={"Date": "date"}, inplace=True)
 selic_mensal
 #Exportando os dados processados
 BASE_DIR = Path(__file__).resolve().parents[1]  # raiz do projeto

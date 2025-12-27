@@ -29,15 +29,10 @@ SELIC_PATH = DATA_DIR / "selic_mensal.parquet"
 def load_monthly_parquet_flexible(path: Path) -> pd.DataFrame:
     df = pd.read_parquet(path).copy()
 
-    # caso já exista "date"
     if "date" in df.columns:
         df["date"] = pd.to_datetime(df["date"], errors="coerce")
-
-    # caso exista "Date"
     elif "Date" in df.columns:
         df["date"] = pd.to_datetime(df["Date"], errors="coerce")
-
-    # caso data esteja no índice (qualquer nome)
     else:
         df = df.reset_index()
         candidates = [c for c in ["date", "Date", "index"] if c in df.columns]
@@ -46,10 +41,13 @@ def load_monthly_parquet_flexible(path: Path) -> pd.DataFrame:
         else:
             df["date"] = pd.to_datetime(df[df.columns[0]], errors="coerce")
 
-    # tenta converter colunas numéricas
     for c in df.columns:
-        if c != "date":
-            df[c] = pd.to_numeric(df[c], errors="ignore")
+        if c == "date":
+            continue
+        try:
+            df[c] = pd.to_numeric(df[c])
+        except (ValueError, TypeError):
+            pass
 
     df = df.dropna(subset=["date"]).sort_values("date").reset_index(drop=True)
     return df
@@ -120,6 +118,13 @@ def filter_last_months(df: pd.DataFrame, months: int) -> pd.DataFrame:
     end = df["date"].max()
     start = end - pd.DateOffset(months=months)
     return df[df["date"] >= start].copy()
+
+def format_br_number(x, decimals=0):
+    if x is None or pd.isna(x):
+        return "n/d"
+    s = f"{x:,.{decimals}f}"
+    return s.replace(",", "X").replace(".", ",").replace("X", ".")
+
 
 
 # -----------------------
@@ -205,7 +210,7 @@ else:
         for i, col in enumerate(selected_cols):
             d_last, v_last = last_value(sgs, col)
             label = credit_map.get(col, col)
-            cols_ui[i].metric(label, f"{v_last:,.0f}" if v_last is not None else "n/d")
+            cols_ui[i].metric(label, format_br_number(v_last, 0))
 
         long_credit = wide_to_long(sgs, selected_cols, credit_map)
         fig_credit = build_area_from_long(long_credit, title="Crédito — estoques (séries selecionadas)", y_label="Saldo (nível)")
@@ -246,7 +251,7 @@ else:
         for i, col in enumerate(selected_cols):
             d_last, v_last = last_value(sgs, col)
             label = juros_map.get(col, col)
-            cols_ui[i].metric(label, f"{v_last:.2f}%" if v_last is not None else "n/d")
+            cols_ui[i].metric(label, f"{format_br_number(v_last, 2)}%")
 
         long_juros = wide_to_long(sgs, selected_cols, juros_map)
         fig_juros = build_bar_from_long(long_juros, title="Taxas de juros — séries selecionadas", y_label="Taxa (%)")
@@ -287,7 +292,8 @@ else:
         for i, col in enumerate(selected_cols):
             d_last, v_last = last_value(sgs, col)
             label = inad_map.get(col, col)
-            cols_ui[i].metric(label, f"{v_last:.2f}%" if v_last is not None else "n/d")
+            cols_ui[i].metric(label, f"{format_br_number(v_last, 2)}%")
+
 
         long_inad = wide_to_long(sgs, selected_cols, inad_map)
         fig_inad = build_bar_from_long(long_inad, title="Inadimplência — séries selecionadas", y_label="Taxa (%)")

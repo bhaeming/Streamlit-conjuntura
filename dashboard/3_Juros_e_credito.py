@@ -154,7 +154,7 @@ else:
     else:
         c1, c2 = st.columns(2)
         with c1:
-            metric_last(selic_df, "Selic (última)", selic_col, fmt="{:.2f}%")
+            metric_last(selic_df, "Taxa Básico de Juros - Selic ", selic_col, fmt="{:.2f}%")
         with c2:
             d_last, _ = last_value(selic_df, selic_col)
             st.metric("Última referência", d_last.strftime("%Y-%m") if d_last is not None else "n/d")
@@ -187,7 +187,7 @@ sgs = filter_last_months(sgs, 180)  # último 15 anos (ajuste)
 # -------------------
 # 2.1 Crédito (área)
 # -------------------
-st.subheader("Crédito (estoques)")
+st.subheader("Estoque de Crédito (em milhões de R$) ")
 
 credit_cols = [c for c in ["credito_pf", "credito_pj", "credito_total"] if c in sgs.columns]
 if not credit_cols:
@@ -228,7 +228,7 @@ st.divider()
 # -------------------
 # 2.2 Juros (barra)
 # -------------------
-st.subheader("Taxas de juros")
+st.subheader("Taxas de juros Anuais")
 
 juros_cols = [c for c in ["taxa_juros_pf", "taxa_juros_pj", "taxa_juros_total"] if c in sgs.columns]
 if not juros_cols:
@@ -254,7 +254,7 @@ else:
             cols_ui[i].metric(label, f"{format_br_number(v_last, 2)}%")
 
         long_juros = wide_to_long(sgs, selected_cols, juros_map)
-        fig_juros = build_bar_from_long(long_juros, title="Taxas de juros — séries selecionadas", y_label="Taxa (%)")
+        fig_juros = build_bar_from_long(long_juros, title="Taxas de juros — séries selecionadas", y_label="Taxa (a.a.%)")
         st.plotly_chart(fig_juros, width="stretch")
 
         with st.expander("Dados recentes (juros)", expanded=False):
@@ -296,7 +296,7 @@ else:
 
 
         long_inad = wide_to_long(sgs, selected_cols, inad_map)
-        fig_inad = build_bar_from_long(long_inad, title="Inadimplência — séries selecionadas", y_label="Taxa (%)")
+        fig_inad = build_bar_from_long(long_inad, title="Inadimplência — séries selecionadas", y_label="Taxa (a.a.%)")
         st.plotly_chart(fig_inad, width="stretch")
 
         with st.expander("Dados recentes (inadimplência)", expanded=False):

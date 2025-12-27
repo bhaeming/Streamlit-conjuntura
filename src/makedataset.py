@@ -550,7 +550,7 @@ socioeco_wide = reduce(
 ).sort_values("date").reset_index(drop=True)
 
 socioeco_wide.dropna(inplace=True)
-socioeco_wide
+socioeco_wide.head()
 
 #Exportando os dados processados
 

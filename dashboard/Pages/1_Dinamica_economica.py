@@ -4,18 +4,16 @@ import pandas as pd
 import plotly.express as px
 import streamlit as st
 
-
-# -----------------------
-# Configuração da página
-# -----------------------
 st.set_page_config(page_title="Dinâmica econômica", layout="wide")
 st.title("Dinâmica econômica")
+
+# resto do código: loaders, gráficos, métricas, etc.
 
 
 # -----------------------
 # Caminhos (robusto para rodar/deploy)
 # -----------------------
-BASE_DIR = Path(__file__).resolve().parents[1]  # dashboard/ -> raiz do projeto
+BASE_DIR = Path(__file__).resolve().parents[2]  # dashboard/ -> raiz do projeto
 DATA_DIR = BASE_DIR / "data" / "processed"
 
 PIB_PATH = DATA_DIR / "pibs_quarterly.parquet"

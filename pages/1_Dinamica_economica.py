@@ -112,28 +112,69 @@ def build_line_figure(df: pd.DataFrame, col: str, title: str, y_label: str):
 # -----------------------
 # Métricas
 # -----------------------
+import pandas as pd
+
 def compute_ibc_metrics(df: pd.DataFrame, col: str = "ibc_br") -> dict:
-    s = df[["date", col]].dropna().sort_values("date").set_index("date")[col].astype(float)
+    # Série temporal limpa e ordenada
+    s = (
+        df[["date", col]]
+        .dropna()
+        .sort_values("date")
+        .set_index("date")[col]
+        .astype(float)
+    )
 
-    if len(s) < 2:
-        return {"mom": None, "yoy12": None, "ytd": None}
+    if s.empty:
+        return {"mom": None, "acc12": None, "ytd": None, "last_date": None, "last_value": None}
 
-    last_date = s.index[-1]
-    last_value = s.iloc[-1]
+    last_date = s.index.max()
+    last_value = float(s.loc[last_date])
 
-    mom = (s.pct_change(1).iloc[-1]) * 100
-    yoy12 = (s.pct_change(12).iloc[-1]) * 100 if len(s) >= 13 else None
+    # m/m (%)
+    mom = None
+    if len(s) >= 2:
+        prev_date = s.index[-2]
+        prev_value = s.iloc[-2]
+        if prev_value != 0:
+            mom = ((last_value / prev_value) - 1) * 100
 
-    prev_year = last_date.year - 1
-    dec_prev = s[(s.index.year == prev_year) & (s.index.month == 12)]
-    ytd = ((last_value / dec_prev.iloc[-1]) - 1) * 100 if len(dec_prev) > 0 else None
+    # 12m acumulado (%): soma dos últimos 12 / soma dos 12 imediatamente anteriores
+    acc12 = None
+    if len(s) >= 24:
+        last_12 = s.iloc[-12:].sum()
+        prev_12 = s.iloc[-24:-12].sum()
+        if prev_12 != 0:
+            acc12 = ((last_12 / prev_12) - 1) * 100
 
-    return {"mom": mom, "yoy12": yoy12, "ytd": ytd}
+    # YTD (%): soma jan..m_ref do ano atual / soma jan..m_ref do ano anterior
+    ytd = None
+    year = last_date.year
+    month_ref = last_date.month
+
+    cur_period = s[(s.index.year == year) & (s.index.month <= month_ref)]
+    prev_period = s[(s.index.year == (year - 1)) & (s.index.month <= month_ref)]
+
+    if (not cur_period.empty) and (not prev_period.empty):
+        cur_sum = cur_period.sum()
+        prev_sum = prev_period.sum()
+        if prev_sum != 0:
+            ytd = ((cur_sum / prev_sum) - 1) * 100
+
+    return {
+        "mom": mom,            # variação mensal (%)
+        "acc12": acc12,        # 12m acumulado (%), pelo seu critério de somas
+        "ytd": ytd,            # acumulado no ano (%)
+        "last_date": last_date,
+        "last_value": last_value,
+    }
+
+
 def last_value(df: pd.DataFrame, col: str):
     s = df[["date", col]].dropna().sort_values("date")
     if s.empty:
         return None, None
     return s.iloc[-1]["date"], float(s.iloc[-1][col])
+
 
 
 def render_last_value_metrics(df: pd.DataFrame, cols: list[tuple[str, str]]):
@@ -252,11 +293,30 @@ def main() -> None:
         return
 
     m = compute_ibc_metrics(sgs_m, col="ibc_br")
-    c1, c2, c3 = st.columns(3)
 
-    c1.metric("Variação mensal (m/m)", f"{m['mom']:.2f}%" if m["mom"] is not None else "n/d")
-    c2.metric("Variação 12 meses (a/a)", f"{m['yoy12']:.2f}%" if m["yoy12"] is not None else "n/d")
-    c3.metric("Acumulado no ano (YTD)", f"{m['ytd']:.2f}%" if m["ytd"] is not None else "n/d")
+    c1, c2, c3, c4 = st.columns(4)
+
+    with c1:
+        c1.metric(
+            "Variação mensal (m/m)",
+            f"{m['mom']:.2f}%" if m["mom"] is not None else "n/d",
+        )
+
+    with c2:
+        c2.metric(
+            "12 meses (soma / soma)",
+            f"{m['acc12']:.2f}%" if m["acc12"] is not None else "n/d",
+        )
+
+    with c3:
+        c3.metric(
+            "Acumulado no ano (YTD)",
+            f"{m['ytd']:.2f}%" if m["ytd"] is not None else "n/d",
+        )
+
+    with c4:
+        last_ref = m["last_date"].strftime("%Y-%m") if m.get("last_date") is not None else "n/d"
+        c4.metric("Última referência", last_ref)
 
     with st.expander("Dados mais recentes do IBC-Br", expanded=False):
         st.dataframe(
@@ -271,6 +331,7 @@ def main() -> None:
         y_label="Índice",
     )
     st.plotly_chart(fig_ibc, width="stretch")
+
 
     # =====================
     # Indústria, comércio e serviços

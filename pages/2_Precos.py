@@ -173,7 +173,7 @@ else:
 
 
 st.divider()
-st.header("Preços ao produtor (IPP)")
+st.header("Preços ao produtor em 12 meses (IPP)")
 
 if not IPP_PATH.exists():
     st.info(f"Arquivo não encontrado: {IPP_PATH}")
@@ -212,4 +212,4 @@ else:
     st.plotly_chart(fig, width="stretch")
 
     with st.expander("Dados recentes (IPP)", expanded=False):
-        st.dataframe(ipp.sort_values("date").tail(36), width="stretch")
+        st.dataframe(ipp.sort_values("date").tail(24), width="stretch")

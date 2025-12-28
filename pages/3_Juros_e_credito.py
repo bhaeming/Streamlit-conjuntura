@@ -15,7 +15,7 @@ st.title("Juros e crédito")
 # -----------------------
 # Caminhos
 # -----------------------
-BASE_DIR = Path(__file__).resolve().parents[2] 
+BASE_DIR = Path(__file__).resolve().parents[1] 
 DATA_DIR = BASE_DIR / "data" / "processed"
 
 SGS_PATH = DATA_DIR / "sgs_dados.parquet"

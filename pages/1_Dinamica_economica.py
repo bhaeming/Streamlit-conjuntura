@@ -13,7 +13,7 @@ st.title("Dinâmica econômica")
 # -----------------------
 # Caminhos (robusto para rodar/deploy)
 # -----------------------
-BASE_DIR = Path(__file__).resolve().parents[2]  # dashboard/ -> raiz do projeto
+BASE_DIR = Path(__file__).resolve().parents[1]  # dashboard/ -> raiz do projeto
 DATA_DIR = BASE_DIR / "data" / "processed"
 
 PIB_PATH = DATA_DIR / "pibs_quarterly.parquet"

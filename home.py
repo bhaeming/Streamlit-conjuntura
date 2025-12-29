@@ -14,7 +14,7 @@ PAGES = {
     "Dinâmica econômica": "pages/1_Dinamica_economica.py",
     "Preços ao consumidor e ao produtor": "pages/2_Precos.py",
     "Juros e crédito": "pages/3_Juros_e_credito.py",
-    "Emprego e dados socioeconômicos": "pages/4_Empregos_dados_socio.py",
+    "Emprego e dados socioeconômicos": "pages/4_Empregos_dados_socioeconomicos.py",
     "Balança comercial": "pages/5_Balanca_comercial.py",
 }
 
@@ -36,7 +36,7 @@ with c1:
     )
     card(
         "Juros e crédito",
-        "Selic, taxas, crédito, inadimplência e spreads.",
+        "Selic, taxas de juros, crédito e inadimplência",
         PAGES["Juros e crédito"],
     )
 
@@ -59,5 +59,5 @@ with st.container(border=True):
     st.subheader("Balança comercial")
     st.write("Exportações, importações, saldo e destaques por produto/mercado.")
     if st.button("Abrir", key="open_trade"):
-        st.switch_page(PAGES["Balança comercial"])
+        st.switch_page(PAGES["Balança comercial (Em contrução)"])
 

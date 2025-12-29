@@ -178,7 +178,7 @@ selected_cols = [inv_map[lbl] for lbl in selected_labels if lbl in inv_map]
 if selected_cols:
     long_df = wide_to_long(df, selected_cols, name_map)
 
-    # como unidades diferem (R$ vs %), oferecemos 2 modos:
+    # como unidades diferem (R$ vs %), há 2 modos de visuaização:
     mode = st.radio(
         "Modo de visualização",
         ["Linhas (todas juntas)", "Linhas por variável (facets)"],

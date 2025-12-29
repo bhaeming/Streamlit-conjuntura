@@ -56,7 +56,7 @@ st.divider()
 
 # Uma caixa em largura total
 with st.container(border=True):
-    st.subheader("Balança comercial")
+    st.subheader("Balança comercial (Em contrução)")
     st.write("Exportações, importações, saldo e destaques por produto/mercado.")
     if st.button("Abrir", key="open_trade"):
         st.switch_page(PAGES["Balança comercial (Em contrução)"])

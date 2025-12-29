@@ -85,7 +85,7 @@ with col1:
     A aplicação está em constante evolução, com novos dados, análises e funcionalidades, incorporando 
     feedbacks dos usuários.
              
-    O público-alvo são analistas, gestores, acadêmicos, estudantes e pessoas interessadas em acompanhar a 
+    O público-alvo são economistas, analistas, gestores, acadêmicos, estudantes e pessoas interessadas em acompanhar a 
     conjuntura econômica do Brasil.
              
     O painel é construído com Streamlit e Python, utilizando dados oficiais de fontes como IBGE, 

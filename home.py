@@ -61,3 +61,42 @@ with st.container(border=True):
     if st.button("Abrir", key="open_trade"):
         st.switch_page(PAGES["Balança comercial (Em contrução)"])
 
+st.divider()
+
+
+col1, col2 = st.columns([2, 1])
+
+with col1:
+    st.subheader("Sobre o autor", divider=True)
+    st.subheader("Bruno Haeming")
+    st.write("""
+     
+    Economista | Doutor em Relações Internacionais com ênfase em Economia Política Internacional  
+
+    Especialista em conjuntura macroeconômica, análise setorial,modelagem econométrica aplicada,
+    política e risco político internacional.
+    
+
+    """)
+    st.subheader("Sobre o Painel", divider=True)
+    st.write("""
+                 
+        Este painel oferece  uma leitura ágil, integrada e atualizada da economia brasileira.
+    A aplicação está em constante evolução, com novos dados, análises e funcionalidades, incorporando 
+    feedbacks dos usuários.
+                
+        O público-alvo são analistas, gestores, acadêmicos e estudantes interessados em acompanhar a 
+    conjuntura econômica do Brasil.
+             
+        O painel é construído com Streamlit e Python, utilizando dados oficiais de fontes como IBGE, 
+    Banco Central do Brasil, MDIC, entre outras.  
+
+             """)
+
+with col2:
+    st.subheader("Contato")
+    st.markdown("""
+    🔗 [LinkedIn](https://www.linkedin.com/in/bruno-haeming-87528b142//)  
+    📄 [Lattes](http://lattes.cnpq.br/4249387473108996/)  
+    ✉️ bhaeming@gmail.com
+    """)

@@ -84,11 +84,11 @@ with col1:
         Este painel oferece  uma leitura ágil, integrada e atualizada da economia brasileira.
     A aplicação está em constante evolução, com novos dados, análises e funcionalidades, incorporando 
     feedbacks dos usuários.
-                
-        O público-alvo são analistas, gestores, acadêmicos e estudantes interessados em acompanhar a 
+             
+    O público-alvo são analistas, gestores, acadêmicos, estudantes e pessoas interessadas em acompanhar a 
     conjuntura econômica do Brasil.
              
-        O painel é construído com Streamlit e Python, utilizando dados oficiais de fontes como IBGE, 
+    O painel é construído com Streamlit e Python, utilizando dados oficiais de fontes como IBGE, 
     Banco Central do Brasil, MDIC, entre outras.  
 
              """)

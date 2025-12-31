@@ -9,14 +9,16 @@ import statsmodels.api as sm
 import statsmodels.formula.api as smf
 from functools import reduce
 from pathlib import Path   
+from __future__ import annotations
 
 ###################################################################
-# Dados SGS
+### Dados SGS ###
 
+## Selic
 selic = sgs.get({'selic' : '432'},
                start = '2020-01-31')
 selic
-#tratamento dos dados da selic para mensal
+# Tratamento dos dados da selic para mensal
 selic_mensal = selic.resample('M').last().reset_index()
 selic_mensal.rename(columns={"Date": "date"}, inplace=True)
 selic_mensal
@@ -51,7 +53,7 @@ saldo_cred = sgs.get(
 )
 saldo_cred
 
-#inadimplencia anual
+## inadimplencia anual
 inadimplencia =  sgs.get(
     {
         'inadimplencia_total' : '21085',
@@ -63,7 +65,7 @@ inadimplencia =  sgs.get(
 inadimplencia
 
 
-#taxa de juros anual
+## taxa de juros anual
 taxa_de_juros = sgs.get(
     {
         'taxa_juros_pf' : '20748',
@@ -108,7 +110,7 @@ sgs_wide.to_parquet(out_dir / "sgs_dados.parquet", index=False)
 
 #  --- Dados SIDRA ---
 
-# PIB por setores trimestral
+## PIB por setores trimestral
 
 pibs = sidra.get_table(
     table_code=5932,
@@ -182,7 +184,187 @@ out_dir.mkdir(parents=True, exist_ok=True)
 
 pib_long.to_parquet(out_dir / "pibs_quarterly.parquet", index=False)
 
+## IPCA detalhado
 
+IPCA_TABLE = "7060"
+
+# Grupos (315) — índice cheio e grupos (seus códigos)
+IPCA_GRUPOS_315 = "7169,7170,7445,7486,7558,7625,7660,7712,7766,7786"
+
+# Variáveis (tabela 7060):
+# 63  = variação mensal
+# 2265 = variação acumulada em 12 meses
+# 66  = peso mensal
+IPCA_VARS = ["63", "2265", "66"]
+
+VAR_LABELS = {
+    "IPCA - Variação mensal": "variacao_mensal",
+    "IPCA - Variação acumulada em 12 meses": "variacao_12m",
+    "IPCA - Peso mensal": "peso_mensal",
+}
+
+def fetch_ipca_grupos(period: str = "all") -> pd.DataFrame:
+    """
+    Busca no SIDRA a tabela 7060 para Brasil (nível 1, código 1),
+    para o IPCA cheio e grupos (classificação 315) e variáveis definidas em IPCA_VARS.
+    """
+    frames = []
+    for var in IPCA_VARS:
+        df = sidra.get_table(
+            table_code=IPCA_TABLE,
+            territorial_level="1",
+            ibge_territorial_code="1",
+            variable=var,
+            classifications={"315": IPCA_GRUPOS_315},
+            period=period,
+            header="n",
+        )
+        frames.append(df)
+
+    return pd.concat(frames, ignore_index=True)
+
+#Tratamento ipca detalhado
+
+def tidy_ipca_grupos(df_raw: pd.DataFrame) -> pd.DataFrame:
+    df = df_raw.copy()
+
+    rename_map = {
+        "D2C": "periodo",   # YYYYMM
+        "D3N": "variavel",
+        "D4N": "grupo",
+        "V": "value",
+    }
+
+    for k, v in rename_map.items():
+        if k in df.columns:
+            df = df.rename(columns={k: v})
+
+    # valor numérico
+    df["value"] = pd.to_numeric(df["value"], errors="coerce")
+
+    # data: YYYYMM -> fim do mês
+    df["date"] = (
+        pd.to_datetime(df["periodo"].astype(str), format="%Y%m", errors="coerce")
+        + pd.offsets.MonthEnd(0)
+    )
+
+    # normaliza nomes das variáveis
+    df["indicador"] = df["variavel"].replace(VAR_LABELS)
+
+    # limpa nome dos grupos (remove "1. ")
+    df["grupo"] = (
+        df["grupo"]
+        .astype(str)
+        .str.replace(r"^\d+\.\s*", "", regex=True)
+        .str.strip()
+    )
+
+    out = (
+        df[["date", "grupo", "indicador", "value"]]
+        .dropna(subset=["date", "grupo", "indicador", "value"])
+        .sort_values(["grupo", "indicador", "date"])
+        .reset_index(drop=True)
+    )
+
+    return out
+
+
+
+
+# coleta
+raw_ipca = fetch_ipca_grupos(period="all")
+
+# tratamento
+ipca_grupos = tidy_ipca_grupos(raw_ipca)
+
+# visualização rápida (debug)
+print(ipca_grupos.head(10))
+print(ipca_grupos.tail(10))
+print(ipca_grupos["indicador"].value_counts())
+print(ipca_grupos["grupo"].unique())
+
+
+
+# Exportação de dados
+
+# Exportação do IPCA grupos (parquet)
+BASE_DIR = Path(__file__).resolve().parents[1]
+out_dir = BASE_DIR / "data" / "processed"
+out_dir.mkdir(parents=True, exist_ok=True)
+
+ipca_grupos.to_parquet(out_dir / "ipca_grupos.parquet", index=False)
+
+
+
+def tidy_ipca_grupos(df_raw: pd.DataFrame) -> pd.DataFrame:
+    """
+    Retorna dataframe long com:
+      date (datetime, fim do mês),
+      grupo (str),
+      indicador (variacao_mensal | variacao_12m | peso_mensal),
+      value (float)
+    """
+    df = df_raw.copy()
+
+    # padrão sidrapy quando header='n': colunas como D2C, D2N, D4N e V
+    # - D2C: período (YYYYMM)
+    # - D4N: nome do grupo (geral/grupo/subgrupo/etc.)
+    # - D3N: variável (nome)
+    # - V  : valor
+    rename_map = {
+        "D2C": "periodo",
+        "D3N": "variavel",
+        "D4N": "grupo",
+        "V": "value",
+    }
+    for k, v in rename_map.items():
+        if k in df.columns:
+            df = df.rename(columns={k: v})
+
+    # remove linhas estranhas
+    df["value"] = pd.to_numeric(df["value"], errors="coerce")
+
+    # data: YYYYMM -> último dia do mês
+    df["date"] = pd.to_datetime(df["periodo"].astype(str), format="%Y%m", errors="coerce") + pd.offsets.MonthEnd(0)
+
+    # normaliza nomes de variável
+    df["indicador"] = df["variavel"].replace(VAR_LABELS)
+
+    # limpeza do nome do grupo (remove "1." etc.)
+    df["grupo"] = df["grupo"].astype(str).str.replace(r"^\d+\.\s*", "", regex=True).str.strip()
+
+    out = df[["date", "grupo", "indicador", "value"]].dropna(subset=["date", "grupo", "indicador", "value"])
+    out = out.sort_values(["grupo", "indicador", "date"]).reset_index(drop=True)
+
+    return out
+
+# Coleta de dados IPCA detalhados
+
+def build_ipca_grupos_dataset(period: str = "all") -> pd.DataFrame:
+    raw = fetch_ipca_grupos(period=period)
+    return tidy_ipca_grupos(raw)
+
+
+def save_ipca_grupos_parquet(df: pd.DataFrame, out_path: Path) -> None:
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    df.to_parquet(out_path, index=False)
+
+from pathlib import Path
+
+BASE_DIR = Path(__file__).resolve().parents[1]
+OUT_DIR = BASE_DIR / "data" / "processed"
+
+OUT_DIR.mkdir(parents=True, exist_ok=True)
+
+ipca_grupos.to_parquet(
+    OUT_DIR / "ipca_grupos.parquet",
+    index=False
+)
+
+ipca_grupos.head()
+
+
+#---------------------------
 
 # Indice de preços ao produtor - IPP
 
@@ -560,3 +742,4 @@ out_dir = BASE_DIR / "data" / "processed"
 out_dir.mkdir(parents=True, exist_ok=True)
 
 socioeco_wide.to_parquet(out_dir / "socioeconomico_quarterly.parquet", index=False)
+

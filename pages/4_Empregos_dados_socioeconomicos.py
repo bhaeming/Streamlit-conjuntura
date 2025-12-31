@@ -137,7 +137,7 @@ name_map = {
 }
 
 # -----------------------
-# 1) Métricas (última observação)
+# 1) Métricas de Destaque
 # -----------------------
 st.header("Resumo (último trimestre)")
 

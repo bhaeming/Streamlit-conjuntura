@@ -7,13 +7,11 @@ import streamlit as st
 st.set_page_config(page_title="Dinâmica econômica", layout="wide")
 st.title("Dinâmica econômica")
 
-# resto do código: loaders, gráficos, métricas, etc.
-
 
 # -----------------------
-# Caminhos (robusto para rodar/deploy)
+# Caminhos para o data set
 # -----------------------
-BASE_DIR = Path(__file__).resolve().parents[1]  # dashboard/ -> raiz do projeto
+BASE_DIR = Path(__file__).resolve().parents[1]  # # dados/ processed - acessa os dados tratados
 DATA_DIR = BASE_DIR / "data" / "processed"
 
 PIB_PATH = DATA_DIR / "pibs_quarterly.parquet"
@@ -21,7 +19,7 @@ IBC_PATH = DATA_DIR / "sgs_dados.parquet"
 PPP_PATH = DATA_DIR / "indust_comer_serv.parquet"
 
 # -----------------------
-# Loaders
+# Loaders- funções utilizadas (building features) para carregar dados e tratar os dados
 # -----------------------
 @st.cache_data(show_spinner=False)
 def load_parquet(path: Path) -> pd.DataFrame:
@@ -52,7 +50,7 @@ def load_sgs_monthly(path: Path) -> pd.DataFrame:
 @st.cache_data(show_spinner=False)
 def load_indus_comer_serv(path: Path) -> pd.DataFrame:
     df = pd.read_parquet(path).copy()
-
+ # Se a coluna date não existir, traze do índice e, após isso, converte para datetime.
     if "date" not in df.columns:
         df = df.reset_index()
 
@@ -73,7 +71,7 @@ def add_quarter_label(df: pd.DataFrame) -> pd.DataFrame:
 
 
 # -----------------------
-# Figuras
+# Gráficos
 # -----------------------
 def build_pib_bar_figure(df: pd.DataFrame, dim_col: str | None):
     if dim_col is None:
@@ -110,7 +108,7 @@ def build_line_figure(df: pd.DataFrame, col: str, title: str, y_label: str):
 
 
 # -----------------------
-# Métricas
+# Métricas em Destaque
 # -----------------------
 import pandas as pd
 

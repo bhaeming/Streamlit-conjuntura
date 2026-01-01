@@ -208,7 +208,7 @@ def main() -> None:
     # =====================
     # PIB (trimestral)
     # =====================
-    st.subheader("PIB (trimestral)")
+    st.subheader("Produto Interno Bruto (trimestral)")
 
     if not PIB_PATH.exists():
         st.error(f"Arquivo não encontrado: {PIB_PATH}")
@@ -344,7 +344,7 @@ def main() -> None:
         ppp = load_indus_comer_serv(PPP_PATH)
 
         # --- métricas: último valor observado ---
-        st.subheader("Indicadores (12 meses)")
+        st.subheader("Indicadores (% 12 meses)")
         render_last_value_metrics(
             ppp,
             cols=[
@@ -363,7 +363,7 @@ def main() -> None:
         series_cols = list(series_map.keys())
         options = [series_map[c] for c in series_cols]
 
-        default_sel = ["PIM (12m)", "PMC (12m)", "PMS (12m)"]  # já começa com as 3
+        default_sel = ["Produção Industrial mensal (% PIM 12 meses)", " Pesquisa Mensal de Comércio (% PMC 12 meses)", "Pesquisa Mensal de Serviços (% PMS 12 meses)"]  # já começa com as 3
 
         col1, col2 = st.columns([1, 1])
         with col1:

@@ -210,7 +210,7 @@ st.divider()
 
 
 # =========================
-# COMPOSIÇÃO DO IPCA (stack + linha)
+# COMPOSIÇÃO DO IPCA MENSAL
 # =========================
 st.subheader("Composição do IPCA mensal (contribuições por grupo)")
 
@@ -330,7 +330,7 @@ else:
     last_calc = float(total_pp.loc[total_pp["ref"] == last_ref, "ipca_calc"].iloc[0])
 
     m1, m2 = st.columns([1, 1])
-    with m1:
+    with m1:    
         st.metric("Última referência", last_ref)
     with m2:
         st.metric("Somatório das contribuições (p.p.)", f"{last_calc:.2f}%")
@@ -348,10 +348,10 @@ else:
 
         h1, h2 = st.columns([1, 1])
         with h1:
-            st.caption("Maior pressão altista")
+            st.caption("Maior pressão altista (em relação ao mês anterior)")
             st.write(f"**{best['grupo_plot'].iloc[0]}**: {float(best['contrib_pp'].iloc[0]):+.2f} p.p.")
         with h2:
-            st.caption("Maior alívio (pressão baixista)")
+            st.caption("Maior alívio (pressão baixista em relação ao mês anterior)")
             st.write(f"**{worst['grupo_plot'].iloc[0]}**: {float(worst['contrib_pp'].iloc[0]):+.2f} p.p.")
 
     # 9) gráfico combinado

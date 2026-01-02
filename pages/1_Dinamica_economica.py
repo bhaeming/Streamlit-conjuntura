@@ -348,22 +348,28 @@ def main() -> None:
         render_last_value_metrics(
             ppp,
             cols=[
-                ("pim_12m", "PIM (12m)"),
-                ("pmc_12m", "PMC (12m)"),
-                ("pms_12m", "PMS (12m)"),
+                ("pim_12m", "Produção Industrial mensal (% PIM 12 meses)"),
+                ("pmc_12m", "Pesquisa Mensal de Comércio (% PMC 12 meses)"),
+                ("pms_12m", "Pesquisa Mensal de Serviços (% PMS 12 meses)"),
             ],
         )
 
-        # --- seleção de séries (igual PIB) ---
         series_map = {
-            "pim_12m": "PIM (12m)",
-            "pmc_12m": "PMC (12m)",
-            "pms_12m": "PMS (12m)",
+            "pim_12m": "Produção Industrial mensal (% PIM 12 meses)",
+            "pmc_12m": "Pesquisa Mensal de Comércio (% PMC 12 meses)",
+            "pms_12m": "Pesquisa Mensal de Serviços (% PMS 12 meses)",
         }
         series_cols = list(series_map.keys())
         options = [series_map[c] for c in series_cols]
 
-        default_sel = ["Produção Industrial mensal (% PIM 12 meses)", " Pesquisa Mensal de Comércio (% PMC 12 meses)", "Pesquisa Mensal de Serviços (% PMS 12 meses)"]  # já começa com as 3
+        # default: começa com as 3 (sem espaços extras!)
+        default_sel = [
+            "Produção Industrial mensal (% PIM 12 meses)",
+            "Pesquisa Mensal de Comércio (% PMC 12 meses)",
+            "Pesquisa Mensal de Serviços (% PMS 12 meses)",
+        ]
+        # garante que default só tenha itens que existem em options
+        default_sel = [x for x in default_sel if x in options]
 
         col1, col2 = st.columns([1, 1])
         with col1:
@@ -387,7 +393,7 @@ def main() -> None:
         inv_map = {v: k for k, v in series_map.items()}
         selected_cols = [inv_map[l] for l in selected_labels if l in inv_map]
 
-        if len(selected_cols) == 0:
+        if not selected_cols:
             st.warning("Nenhuma série selecionada. Selecione ao menos uma série para exibir o gráfico.")
         else:
             # --- gráfico único (long) ---
@@ -403,7 +409,7 @@ def main() -> None:
                 x="date",
                 y="value",
                 color="serie",
-                title="Produção, comércio e serviços — variação em 12 meses (%)",
+                title="Produção Industrial, comércio e serviços — variação em 12 meses (%)",
             )
             fig_ppp.update_layout(
                 xaxis_title="Data",
@@ -411,13 +417,14 @@ def main() -> None:
                 legend_title_text="Série",
             )
 
-            st.plotly_chart(fig_ppp, width="stretch")
+            st.plotly_chart(fig_ppp, width="stretch", key="ppp_line")
 
         with st.expander("Dados mais recentes (PIM/PMC/PMS — 12m)", expanded=False):
             st.dataframe(
                 ppp[["date", "pim_12m", "pmc_12m", "pms_12m"]].dropna().tail(12),
                 width="stretch",
             )
+
 
 # Execução
 main()

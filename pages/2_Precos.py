@@ -25,10 +25,11 @@ IPCA_GRUPOS_PATH = DATA_DIR / "ipca_grupos.parquet"
 
 
 # -----------------------
-# Loaders
+# Loaders funções utilizadas (building features) para carregar dados e tratar os dados
 # -----------------------
 @st.cache_data(show_spinner=False)
 
+    # Função para tratar diferentes formatos de data em arquivos parquet mensais
 def load_monthly_parquet_flexible(path: Path) -> pd.DataFrame:
     df = pd.read_parquet(path).copy()
 

@@ -48,6 +48,7 @@ def load_sgs_monthly(path: Path) -> pd.DataFrame:
     return df
 
 @st.cache_data(show_spinner=False)
+
 def load_indus_comer_serv(path: Path) -> pd.DataFrame:
     df = pd.read_parquet(path).copy()
  # Se a coluna date não existir, traze do índice e, após isso, converte para datetime.
@@ -61,9 +62,8 @@ def load_indus_comer_serv(path: Path) -> pd.DataFrame:
 
     return df
 
-# -----------------------
-# Transformações
-# -----------------------
+# Transformações adicionais
+
 def add_quarter_label(df: pd.DataFrame) -> pd.DataFrame:
     out = df.copy()
     out["trimestre"] = out["date"].dt.to_period("Q").astype(str)
@@ -71,7 +71,7 @@ def add_quarter_label(df: pd.DataFrame) -> pd.DataFrame:
 
 
 # -----------------------
-# Gráficos
+# Funções para construção de gráficos
 # -----------------------
 def build_pib_bar_figure(df: pd.DataFrame, dim_col: str | None):
     if dim_col is None:
@@ -108,9 +108,8 @@ def build_line_figure(df: pd.DataFrame, col: str, title: str, y_label: str):
 
 
 # -----------------------
-# Métricas em Destaque
-# -----------------------
-import pandas as pd
+# Funções para criar as métricas em destaque
+# ----------------------
 
 def compute_ibc_metrics(df: pd.DataFrame, col: str = "ibc_br") -> dict:
     # Série temporal limpa e ordenada
@@ -225,11 +224,11 @@ def main() -> None:
 
         default_candidates = [
             "PIB a preços de mercado",
-            "Serviços - total",
-            "Indústria - total",
-            "Agropecuária - total",
+            #"Serviços - total",
+            #"Indústria - total",
+            #"Agropecuária - total",
             "Formação bruta de capital fixo",
-            "Consumo das famílias",
+           # "Consumo das famílias",
         ]
         default_sel = [s for s in default_candidates if s in options] or options[:4]
 

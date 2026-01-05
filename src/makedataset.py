@@ -565,9 +565,22 @@ desemp = sidra.get_table(
     header='n'
 )
 desemp
+# desemprego por uf
+desemp_uf = sidra.get_table(
+    table_code= 4099,
+    territorial_level='3',
+    ibge_territorial_code='all',
+    variable='4099',
+    period='all',
+    classifications='',
+    header='n'
+)
+desemp_uf
+
+#Funções de tratamento desemprego
 
 def tidy_sidra_desemp(df: pd.DataFrame) -> pd.DataFrame:
-    desemprego = desemp.copy()
+    desemprego = desemp_uf.copy()
 
     # valor numérico (SIDRA às vezes vem como string)
     desemprego["V"] = pd.to_numeric(desemprego["V"], errors="coerce")
@@ -578,6 +591,7 @@ def tidy_sidra_desemp(df: pd.DataFrame) -> pd.DataFrame:
     # colunas-alvo
     desemprego = desemprego.rename(columns={
         "D4N": "setor",
+        "D1N": "uf",
         "V": "taxa_desemprego",
     })[["date", "taxa_desemprego"]]
 
@@ -585,6 +599,42 @@ def tidy_sidra_desemp(df: pd.DataFrame) -> pd.DataFrame:
 
 desemprego_long = tidy_sidra_desemp(desemp)
 desemprego_long
+
+#Funções de tratamento desemprego por uf
+
+def tidy_sidra_desemp_uf(df: pd.DataFrame) -> pd.DataFrame:
+    out = df.copy()
+
+    # valor numérico
+    out["V"] = pd.to_numeric(out["V"], errors="coerce")
+
+    # data a partir do código trimestral (YYYYQQ)
+    out["date"] = sidra_quarter_code_to_date(out["D2C"])
+
+    # UF: tenta nome (D1N) e cai para código (D1C)
+    if "D1N" in out.columns:
+        out["uf"] = out["D1N"].astype(str).str.strip()
+    elif "D1C" in out.columns:
+        out["uf"] = out["D1C"].astype(str).str.strip()
+    else:
+        raise ValueError("Não encontrei a coluna de UF (D1N ou D1C) no dataframe do SIDRA.")
+
+    # (opcional) Se vier mais de uma série/recorte dentro do df, você pode filtrar aqui
+    # Exemplo: se houver dimensão D4N com algo que não seja total, etc.
+
+    out = (
+        out.rename(columns={"V": "taxa_desemprego"})
+           .loc[:, ["date", "uf", "taxa_desemprego"]]
+           .dropna(subset=["date", "uf", "taxa_desemprego"])
+           .sort_values(["uf", "date"])
+           .reset_index(drop=True)
+    )
+
+    return out
+desemprego_uf_long = tidy_sidra_desemp_uf(desemp_uf)
+desemprego_uf_long
+desemprego_uf_long["uf"].unique().tolist()
+
 #ocupação
 
 ocup = sidra.get_table(
@@ -742,4 +792,4 @@ out_dir = BASE_DIR / "data" / "processed"
 out_dir.mkdir(parents=True, exist_ok=True)
 
 socioeco_wide.to_parquet(out_dir / "socioeconomico_quarterly.parquet", index=False)
-
+desemprego_uf_long.to_parquet(out_dir / "desemp_uf.parquet", index=False)

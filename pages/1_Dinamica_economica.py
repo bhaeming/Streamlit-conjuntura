@@ -38,14 +38,30 @@ def load_parquet(path: Path) -> pd.DataFrame:
 def load_sgs_monthly(path: Path) -> pd.DataFrame:
     df = pd.read_parquet(path).copy()
 
-    # Se Date está no índice, traz para coluna
-    #if "Date" not in df.columns:
-     #   df = df.reset_index()
+    # 1) tenta coluna 'date'
+    if "date" in df.columns:
+        df["date"] = pd.to_datetime(df["date"], errors="coerce")
 
-    df["date"] = pd.to_datetime(df["date"], errors="coerce")
-    df["date"] = df["date"]
+    # 2) tenta 'Date'
+    elif "Date" in df.columns:
+        df["date"] = pd.to_datetime(df["Date"], errors="coerce")
 
+    # 3) data está no índice (ou outra coluna após reset)
+    else:
+        df = df.reset_index()
+
+        # tenta candidatos comuns
+        candidates = [c for c in ["date", "Date", "index"] if c in df.columns]
+        if candidates:
+            df["date"] = pd.to_datetime(df[candidates[0]], errors="coerce")
+        else:
+            # fallback: tenta a primeira coluna
+            first_col = df.columns[0]
+            df["date"] = pd.to_datetime(df[first_col], errors="coerce")
+
+    df = df.dropna(subset=["date"]).sort_values("date").reset_index(drop=True)
     return df
+
 
 @st.cache_data(show_spinner=False)
 
@@ -159,7 +175,7 @@ def compute_ibc_metrics(df: pd.DataFrame, col: str = "ibc_br") -> dict:
 
     return {
         "mom": mom,            # variação mensal (%)
-        "acc12": acc12,        # 12m acumulado (%), pelo seu critério de somas
+        "acc12": acc12,        # 12m acumulado (%), pelo critério de somas
         "ytd": ytd,            # acumulado no ano (%)
         "last_date": last_date,
         "last_value": last_value,
@@ -420,7 +436,7 @@ def main() -> None:
 
         with st.expander("Dados mais recentes (PIM/PMC/PMS — 12m)", expanded=False):
             st.dataframe(
-                ppp[["date", "pim_12m", "pmc_12m", "pms_12m"]].dropna().tail(12),
+                ppp[[ "date","pim_12m", "pmc_12m", "pms_12m"]].dropna().tail(12),
                 width="stretch",
             )
 

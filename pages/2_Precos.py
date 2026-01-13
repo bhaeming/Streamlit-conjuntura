@@ -1,87 +1,105 @@
+from __future__ import annotations
+
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 import plotly.express as px
 import streamlit as st
 
 
-# -----------------------
-# Configuração da página - Cabeçalho da página (tem que se iniciar por aqui)
-# -----------------------
+# ============================================================
+# CONFIG / PAGE
+# ============================================================
 st.set_page_config(page_title="Preços ao consumidor e ao produtor", layout="wide")
 st.title("Preços ao consumidor e ao produtor")
 
 
-# -----------------------
-# Caminhos para o data set
-# -----------------------
-
-BASE_DIR = Path(__file__).resolve().parents[1]  # dados/ processed - acessa os dados tratados
+# ============================================================
+# PATHS (dados processados)
+# ============================================================
+BASE_DIR = Path(__file__).resolve().parents[1]
 DATA_DIR = BASE_DIR / "data" / "processed"
 
-SGS_PATH = DATA_DIR / "sgs_dados.parquet"
 IPP_PATH = DATA_DIR / "ipp_m.parquet"
 IPCA_GRUPOS_PATH = DATA_DIR / "ipca_grupos.parquet"
+IPCA_ALL_PATH = DATA_DIR / "ipca_all.parquet"
 
 
-# -----------------------
-# Loaders funções utilizadas (building features) para carregar dados e tratar os dados
-# -----------------------
-@st.cache_data(show_spinner=False)
+# ============================================================
+# HELPERS: LOADERS / METRICS / TRANSFORMS
+# ============================================================
 
-    # Função para tratar diferentes formatos de data em arquivos parquet mensais
-def load_monthly_parquet_flexible(path: Path) -> pd.DataFrame:
-    df = pd.read_parquet(path).copy()
+def _ensure_date_column(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Garante que exista a coluna 'date' (datetime), vindo de:
+    - 'date'
+    - 'Date'
+    - índice
+    """
+    out = df.copy()
 
-    # Caso 1: já existe coluna date
-    if "date" in df.columns:
-        df["date"] = pd.to_datetime(df["date"], errors="coerce")
-
-    # Caso 2: existe coluna Date
-    elif "Date" in df.columns:
-        df["date"] = pd.to_datetime(df["Date"], errors="coerce")
-
-    # Caso 3: data está no índice (com qualquer nome)
+    if "date" in out.columns:
+        out["date"] = pd.to_datetime(out["date"], errors="coerce")
+    elif "Date" in out.columns:
+        out["date"] = pd.to_datetime(out["Date"], errors="coerce")
     else:
-        df = df.reset_index()
-
-        # tenta achar uma coluna de data entre as primeiras mais prováveis
-        candidates = [c for c in ["date", "Date", "index"] if c in df.columns]
+        out = out.reset_index()
+        candidates = [c for c in ["date", "Date", "index"] if c in out.columns]
         if candidates:
-            df["date"] = pd.to_datetime(df[candidates[0]], errors="coerce")
+            out["date"] = pd.to_datetime(out[candidates[0]], errors="coerce")
         else:
-            # fallback: tenta usar a primeira coluna e converter
-            first_col = df.columns[0]
-            df["date"] = pd.to_datetime(df[first_col], errors="coerce")
+            out["date"] = pd.to_datetime(out.iloc[:, 0], errors="coerce")
 
-    df = df.dropna(subset=["date"]).sort_values("date").reset_index(drop=True)
-    return df
+    out = out.dropna(subset=["date"]).sort_values("date").reset_index(drop=True)
+    return out
 
+
+@st.cache_data(show_spinner=False)
+def load_parquet_with_date(path: Path) -> pd.DataFrame:
+    df = pd.read_parquet(path).copy()
+    return _ensure_date_column(df)
 
 
 @st.cache_data(show_spinner=False)
 def load_ipp_long(path: Path) -> pd.DataFrame:
+    """
+    Esperado: colunas ['date','setor_ipp','value'] em formato long.
+    """
     df = pd.read_parquet(path).copy()
+    df = _ensure_date_column(df)
 
-    # garante colunas esperadas
-    if "date" not in df.columns:
-        df = df.reset_index()
-
-    df["date"] = pd.to_datetime(df["date"], errors="coerce")
-    df["value"] = pd.to_numeric(df["value"], errors="coerce")
+    # garante numérico
+    if "value" in df.columns:
+        df["value"] = pd.to_numeric(df["value"], errors="coerce")
 
     df = df.dropna(subset=["date", "value"]).sort_values("date").reset_index(drop=True)
     return df
 
 
-def last_value(df: pd.DataFrame, col: str):
+@st.cache_data(show_spinner=False)
+def load_ipca_grupos_long(path: Path) -> pd.DataFrame:
+    """
+    Esperado: colunas ['date','grupo','indicador','value'].
+    """
+    df = pd.read_parquet(path).copy()
+    df = _ensure_date_column(df)
+
+    df["value"] = pd.to_numeric(df["value"], errors="coerce")
+    df = df.dropna(subset=["date", "grupo", "indicador", "value"]).sort_values(["date", "grupo"])
+    return df
+
+
+def last_value(df: pd.DataFrame, col: str) -> tuple[pd.Timestamp | None, float | None]:
+    if col not in df.columns:
+        return None, None
     s = df[["date", col]].dropna().sort_values("date")
     if s.empty:
         return None, None
-    return s.iloc[-1]["date"], float(s.iloc[-1][col])
+    return pd.Timestamp(s.iloc[-1]["date"]), float(s.iloc[-1][col])
 
 
-def metric_last(df: pd.DataFrame, label: str, col: str, fmt: str = "{:.2f}%"):
+def metric_last(df: pd.DataFrame, label: str, col: str, fmt: str = "{:.2f}%") -> None:
     d, v = last_value(df, col)
     if v is None:
         st.metric(label, "n/d")
@@ -89,15 +107,9 @@ def metric_last(df: pd.DataFrame, label: str, col: str, fmt: str = "{:.2f}%"):
         st.metric(label, fmt.format(v))
 
 
-def build_line(df: pd.DataFrame, col: str, title: str, y_label: str):
-    plot_df = df[["date", col]].dropna().rename(columns={col: "value"}).sort_values("date")
-    fig = px.line(plot_df, x="date", y="value", title=title)
-    fig.update_layout(xaxis_title="Data", yaxis_title=y_label)
-    return fig
-
-
 def wide_to_long(df: pd.DataFrame, cols: list[str], name_map: dict[str, str]) -> pd.DataFrame:
-    out = df[["date"] + cols].copy()
+    keep = ["date"] + [c for c in cols if c in df.columns]
+    out = df[keep].copy()
     out = out.melt(id_vars=["date"], var_name="serie", value_name="value")
     out["serie"] = out["serie"].map(name_map).fillna(out["serie"])
     out["value"] = pd.to_numeric(out["value"], errors="coerce")
@@ -105,73 +117,72 @@ def wide_to_long(df: pd.DataFrame, cols: list[str], name_map: dict[str, str]) ->
     return out
 
 
-def last_value_for_sector(ipp: pd.DataFrame, setor: str):
+def last_value_for_sector(ipp: pd.DataFrame, setor: str) -> tuple[pd.Timestamp | None, float | None]:
+    if "setor_ipp" not in ipp.columns:
+        return None, None
     s = ipp.loc[ipp["setor_ipp"] == setor, ["date", "value"]].dropna().sort_values("date")
     if s.empty:
         return None, None
-    return s.iloc[-1]["date"], float(s.iloc[-1]["value"])
+    return pd.Timestamp(s.iloc[-1]["date"]), float(s.iloc[-1]["value"])
 
-def load_ipca_grupos_long(path: Path) -> pd.DataFrame:
-    df = pd.read_parquet(path).copy()
-
-    # esperado: date, grupo, indicador, value
-    if "date" not in df.columns:
-        df = df.reset_index()
-
-    df["date"] = pd.to_datetime(df["date"], errors="coerce")
-    df["value"] = pd.to_numeric(df["value"], errors="coerce")
-
-    df = df.dropna(subset=["date", "grupo", "indicador", "value"]).sort_values(["date", "grupo"])
-    return df
 
 def ipca_contribuicoes(df_ipca_grupos: pd.DataFrame) -> pd.DataFrame:
-    # separa var mensal e peso mensal
+    """
+    Converte (variacao_mensal, peso_mensal) em contribuição em p.p. por grupo.
+    """
     var_m = (
         df_ipca_grupos[df_ipca_grupos["indicador"] == "variacao_mensal"]
         .rename(columns={"value": "variacao_mensal"})
         [["date", "grupo", "variacao_mensal"]]
     )
-
     peso_m = (
         df_ipca_grupos[df_ipca_grupos["indicador"] == "peso_mensal"]
         .rename(columns={"value": "peso_mensal"})
         [["date", "grupo", "peso_mensal"]]
     )
-
-    # merge por date+grupo
     out = var_m.merge(peso_m, on=["date", "grupo"], how="inner")
-
-    # contribuição em pontos percentuais (p.p.)
     out["contrib_pp"] = out["variacao_mensal"] * out["peso_mensal"] / 100.0
-
     return out
 
-# -----------------------
-# Página
-# -----------------------
+
+# ============================================================
+# SECTION 1 — IPCA (headline + gráfico)
+# ============================================================
 st.header("Inflação ao consumidor (IPCA)")
 
-if not SGS_PATH.exists():
-    st.error(f"Arquivo não encontrado: {SGS_PATH}")
+if not IPCA_ALL_PATH.exists():
+    st.error(f"Arquivo não encontrado: {IPCA_ALL_PATH}")
     st.stop()
 
-sgs = load_monthly_parquet_flexible(SGS_PATH)
+ipca_agg = load_parquet_with_date(IPCA_ALL_PATH)
 
-needed = ["ipca", "ipca_12m"]
-missing = [c for c in needed if c not in sgs.columns]
+needed = ["ipca", "ipca_12m", "ipca_livres_12m_calc", "ipca_administrados_12m_calc"]
+missing = [c for c in needed if c not in ipca_agg.columns]
 if missing:
-    st.warning(f"Colunas ausentes em sgs_dados.parquet: {missing}")
+    st.warning(f"Colunas ausentes em ipca_all.parquet: {missing}")
 else:
-    c1, c2, c3 = st.columns(3)
+    # métricas
+    c1, c2, c3, c4, c5 = st.columns(5)
     with c1:
-        metric_last(sgs, "IPCA (mês)", "ipca", fmt="{:.2f}%")
+        metric_last(ipca_agg, "IPCA (mês)", "ipca", fmt="{:.2f}%")
     with c2:
-        metric_last(sgs, "IPCA (12m)", "ipca_12m", fmt="{:.2f}%")
+        metric_last(ipca_agg, "IPCA (12m)", "ipca_12m", fmt="{:.2f}%")
     with c3:
-        d_last, _ = last_value(sgs, "ipca_12m")
+        d_last, _ = last_value(ipca_agg, "ipca_12m")
         st.metric("Última referência", d_last.strftime("%Y-%m") if d_last is not None else "n/d")
+    with c4:
+        metric_last(ipca_agg, "IPCA livres (12m)", "ipca_livres_12m_calc", fmt="{:.2f}%")
+    with c5:
+        metric_last(ipca_agg, "IPCA administrados (12m)", "ipca_administrados_12m_calc", fmt="{:.2f}%")
 
-    series_map = {"ipca": "IPCA (mês)", "ipca_12m": "IPCA (12m)"}
+    # gráfico (curvas em 12m + opcional mensal)
+    series_map = {
+        "ipca_12m": "IPCA (12m) — oficial",
+        "ipca_livres_12m_calc": "IPCA livres (12m)",
+        "ipca_administrados_12m_calc": "IPCA administrados (12m)",
+        # se quiser permitir mensal no mesmo gráfico, descomente:
+        # "ipca": "IPCA (mês)",
+    }
     options = list(series_map.values())
 
     colA, colB = st.columns([1, 1])
@@ -180,14 +191,14 @@ else:
     with colB:
         clear_all = st.button("Limpar seleção", key="ipca_clear_all")
 
-    default_sel = ["IPCA (12m)"]
+    default_sel = ["IPCA (12m) — oficial"]
     if select_all:
         selected_labels = options
     elif clear_all:
         selected_labels = []
     else:
         selected_labels = st.multiselect(
-            "Selecionar séries",
+            "Selecionar séries (curvas)",
             options,
             default=default_sel,
             key="ipca_series",
@@ -199,34 +210,35 @@ else:
     if not selected_cols:
         st.warning("Nenhuma série selecionada.")
     else:
-        plot_long = wide_to_long(sgs, selected_cols, series_map)
-        fig = px.line(plot_long, x="date", y="value", color="serie", title="IPCA — séries selecionadas")
+        plot_long = wide_to_long(ipca_agg, selected_cols, series_map)
+        fig = px.line(plot_long, x="date", y="value", color="serie", title="IPCA — curvas em 12 meses")
         fig.update_layout(xaxis_title="Data", yaxis_title="Variação (%)", legend_title_text="Série")
-        st.plotly_chart(fig, width="stretch")
+        st.plotly_chart(fig, use_container_width=True)
 
     with st.expander("Dados recentes (IPCA)", expanded=False):
-        st.dataframe(sgs[["date", "ipca", "ipca_12m"]].dropna().tail(12), width="stretch")
+        st.dataframe(
+            ipca_agg[["date", "ipca", "ipca_12m"]].dropna().tail(24),
+            use_container_width=True,
+        )
 
 st.divider()
 
 
-# =========================
-# COMPOSIÇÃO DO IPCA MENSAL
-# =========================
+# ============================================================
+# SECTION 2 — Composição do IPCA (contribuições por grupo)
+# ============================================================
 st.subheader("Composição do IPCA mensal (contribuições por grupo)")
 
 if not IPCA_GRUPOS_PATH.exists():
     st.info(f"Arquivo não encontrado: {IPCA_GRUPOS_PATH}")
     st.info("Gere o ipca_grupos.parquet no pipeline para habilitar esta visualização.")
 else:
-    # 1) carrega e calcula contribuições
     ipca_g = load_ipca_grupos_long(IPCA_GRUPOS_PATH)
     contrib = ipca_contribuicoes(ipca_g)
 
-    # ref mensal (robusto p/ merge e filtros)
+    # referência mensal
     contrib["ref"] = contrib["date"].dt.to_period("M").astype(str)
 
-    # 2) filtros de período (UI)
     min_d = contrib["date"].min()
     max_d = contrib["date"].max()
 
@@ -247,18 +259,12 @@ else:
         st.warning("Sem dados no período selecionado.")
         st.stop()
 
-    # 3) remove “índice geral/cheio” do detalhamento (não entra no stack)
-    mask_geral = contrib_f["grupo"].str.contains(
-        r"índice geral|geral|índice\s+cheio",
-        case=False,
-        na=False,
-    )
+    # remove agregados
+    mask_geral = contrib_f["grupo"].str.contains(r"índice geral|geral|índice\s+cheio", case=False, na=False)
     contrib_f = contrib_f[~mask_geral].copy()
 
-    # 4) seleção de grupos (UI) — AGORA sim contrib_f existe
     with c_right:
         st.caption("Seleção de grupos")
-
         grupos_all = sorted(contrib_f["grupo"].dropna().unique().tolist())
 
         b1, b2 = st.columns(2)
@@ -286,17 +292,17 @@ else:
         )
 
     if not grupos_sel:
-        st.warning("Nenhum grupo selecionado. Selecione ao menos um para exibir o gráfico.")
+        st.warning("Nenhum grupo selecionado.")
         st.stop()
 
-    # 5) aplica seleção ao dataset
+    contrib_f["grupo_plot"] = contrib_f["grupo"]
     if agrupar_outros:
         contrib_f["grupo_plot"] = contrib_f["grupo"].where(contrib_f["grupo"].isin(grupos_sel), "Outros")
     else:
         contrib_f = contrib_f[contrib_f["grupo"].isin(grupos_sel)].copy()
         contrib_f["grupo_plot"] = contrib_f["grupo"]
 
-    # 6) agrega para stack por mês
+    # stack por mês
     plot_stack = (
         contrib_f.groupby(["ref", "grupo_plot"], as_index=False)["contrib_pp"]
         .sum()
@@ -304,7 +310,7 @@ else:
     )
     plot_stack["date"] = pd.to_datetime(plot_stack["ref"] + "-01") + pd.offsets.MonthEnd(0)
 
-    # total do somatório (linha fallback)
+    # total
     total_pp = (
         plot_stack.groupby("ref", as_index=False)["contrib_pp"]
         .sum()
@@ -313,30 +319,28 @@ else:
     )
     total_pp["date"] = pd.to_datetime(total_pp["ref"] + "-01") + pd.offsets.MonthEnd(0)
 
-    # 7) índice geral: usa SGS se existir, senão usa ipca_calc
+    # linha do índice geral (usa ipca mensal se tiver; senão usa somatório)
     line_df = total_pp[["date", "ref", "ipca_calc"]].copy()
-    line_df["indice_geral"] = line_df["ipca_calc"]  # default
+    line_df["indice_geral"] = line_df["ipca_calc"]
 
-    if "ipca" in sgs.columns:
-        tmp = sgs[["date", "ipca"]].dropna().copy()
-        tmp["date"] = pd.to_datetime(tmp["date"], errors="coerce")
+    if "ipca" in ipca_agg.columns:
+        tmp = ipca_agg[["date", "ipca"]].dropna().copy()
         tmp["ref"] = tmp["date"].dt.to_period("M").astype(str)
         ipca_headline = tmp.groupby("ref", as_index=False)["ipca"].last()
         line_df = line_df.merge(ipca_headline, on="ref", how="left")
-        # se houver SGS, prioriza
         line_df["indice_geral"] = line_df["ipca"].combine_first(line_df["ipca_calc"])
 
-    # 8) métricas enxutas + highlights (última ref)
+    # métricas
     last_ref = total_pp["ref"].iloc[-1]
     last_calc = float(total_pp.loc[total_pp["ref"] == last_ref, "ipca_calc"].iloc[0])
 
     m1, m2 = st.columns([1, 1])
-    with m1:    
+    with m1:
         st.metric("Última referência", last_ref)
     with m2:
         st.metric("Somatório das contribuições (p.p.)", f"{last_calc:.2f}%")
 
-    # highlights do último mês
+    # highlights
     last_month = contrib_f[contrib_f["ref"] == last_ref].copy()
     if not last_month.empty:
         rank = (
@@ -349,13 +353,13 @@ else:
 
         h1, h2 = st.columns([1, 1])
         with h1:
-            st.caption("Maior pressão altista (em relação ao mês anterior)")
+            st.caption("Maior pressão altista (no mês)")
             st.write(f"**{best['grupo_plot'].iloc[0]}**: {float(best['contrib_pp'].iloc[0]):+.2f} p.p.")
         with h2:
-            st.caption("Maior alívio (pressão baixista em relação ao mês anterior)")
+            st.caption("Maior alívio (no mês)")
             st.write(f"**{worst['grupo_plot'].iloc[0]}**: {float(worst['contrib_pp'].iloc[0]):+.2f} p.p.")
 
-    # 9) gráfico combinado
+    # gráfico combinado
     fig_combo = px.bar(
         plot_stack,
         x="date",
@@ -394,46 +398,18 @@ else:
         margin=dict(b=120),
     )
 
-    # rótulo do último ponto da linha
-    last_line = line_df.dropna(subset=["indice_geral"]).sort_values("date").tail(1)
-    if not last_line.empty:
-        lx = last_line["date"].iloc[0]
-        ly = float(last_line["indice_geral"].iloc[0])
-        fig_combo.add_annotation(
-            x=lx,
-            y=ly,
-            xref="x",
-            yref="y2",
-            text=f"{ly:.2f}%",
-            showarrow=True,
-            arrowhead=2,
-            ax=20,
-            ay=-20,
-        )
+    st.plotly_chart(fig_combo, use_container_width=True, key="ipca_combo")
 
-    st.plotly_chart(fig_combo, width="stretch", key="ipca_combo")
-
-    # 10) tabela de pesos — última referência
-    weights_last = (
-        contrib_f[contrib_f["ref"] == last_ref]
-        .groupby("grupo", as_index=False)["peso_mensal"]
-        .mean()
-        .sort_values("peso_mensal", ascending=False)
-    )
-
-    st.caption(f"Pesos do IPCA por grupo — referência {last_ref}")
-    st.dataframe(
-        weights_last.rename(columns={"grupo": "Grupo", "peso_mensal": "Peso (%)"}),
-        width="stretch",
-        hide_index=True,
-    )
 
     with st.expander("Dados (contribuições)", expanded=False):
-        st.dataframe(plot_stack.sort_values(["date", "grupo_plot"]).tail(24), width="stretch")
-
+        st.dataframe(plot_stack.sort_values(["date", "grupo_plot"]).tail(36), use_container_width=True)
 
 st.divider()
 
+
+# ============================================================
+# SECTION 3 — IPP
+# ============================================================
 st.header("Preços ao produtor em 12 meses (IPP)")
 
 if not IPP_PATH.exists():
@@ -455,7 +431,6 @@ else:
         d_last, v_last = last_value_for_sector(ipp, setor_sel)
         st.metric("Última observação", f"{v_last:.2f}%" if v_last is not None else "n/d")
 
-    # gráfico: ou só o setor escolhido, ou múltiplos
     modo = st.radio("Visualização", ["Setor selecionado", "Comparar setores"], horizontal=True)
 
     if modo == "Setor selecionado":
@@ -463,14 +438,13 @@ else:
         fig = px.line(plot_df, x="date", y="value", title=f"IPP — {setor_sel}")
         fig.update_layout(xaxis_title="Data", yaxis_title="Variação (%)")
     else:
-        # comparação: multiselect de setores
         default_comp = setores[:3]
         comp_sel = st.multiselect("Selecionar setores para comparar", setores, default=default_comp, key="ipp_comp")
         plot_df = ipp[ipp["setor_ipp"].isin(comp_sel)].sort_values("date")
         fig = px.line(plot_df, x="date", y="value", color="setor_ipp", title="IPP — comparação entre setores")
         fig.update_layout(xaxis_title="Data", yaxis_title="Variação (%)", legend_title_text="Setor")
 
-    st.plotly_chart(fig, width="stretch")
+    st.plotly_chart(fig, use_container_width=True)
 
     with st.expander("Dados recentes (IPP)", expanded=False):
-        st.dataframe(ipp.sort_values("date").tail(24), width="stretch")
+        st.dataframe(ipp.sort_values("date").tail(36), use_container_width=True)

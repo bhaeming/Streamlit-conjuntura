@@ -19,7 +19,7 @@ selic = sgs.get({'selic' : '432'},
                start = '2020-01-31')
 selic
 # Tratamento dos dados da selic para mensal
-selic_mensal = selic.resample('M').last().reset_index()
+selic_mensal = selic.resample('ME').last().reset_index()
 selic_mensal.rename(columns={"Date": "date"}, inplace=True)
 selic_mensal
 #Exportando os dados processados
@@ -31,13 +31,108 @@ out_dir.mkdir(parents=True, exist_ok=True)
 selic_mensal.to_parquet(out_dir / "selic_mensal.parquet", index=False)
 
 
-ipca_mensal= sgs.get({'ipca' : '433'},
-               start = '2014-01-31')
-ipca_mensal
+# -----------------------------
+# IPCA - consolida todos os ipcas relevantes do SGS
+# -----------------------------
 
-ipca_12m = sgs.get({'ipca_12m' : '13522'},
-               start = '2014-01-31')
-ipca_12m
+# Funções de tratamento e transformação #
+
+def ensure_month_end_index(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Garante que o DataFrame tenha índice Datetime no fim do mês, ordenado.
+    Aceita:
+      - índice datetime
+      - ou coluna 'date'
+    """
+    out = df.copy()
+
+    if "date" in out.columns:
+        out["date"] = pd.to_datetime(out["date"], errors="coerce")
+        out = out.dropna(subset=["date"]).set_index("date")
+
+    # força fim do mês
+    out.index = pd.to_datetime(out.index, errors="coerce") + pd.offsets.MonthEnd(0)
+    out = out[~out.index.isna()].sort_index()
+
+    return out
+
+
+def acc_12m_curve_rate(s: pd.Series) -> pd.Series:
+    """
+    Converte uma série mensal em % m/m para inflação acumulada em 12 meses (%),
+    via composição multiplicativa (rolling 12).
+    Retorna série alinhada ao índice original.
+    """
+    s = pd.to_numeric(s, errors="coerce")
+    return ((1 + s / 100).rolling(12).apply(np.prod, raw=True) - 1) * 100
+
+
+def add_12m_from_monthly_rates(df: pd.DataFrame, cols: list[str], suffix_12m: str = "_12m_calc") -> pd.DataFrame:
+    """
+    Para cada coluna em cols (mensal % m/m), cria uma coluna 12m composta.
+    """
+    out = df.copy()
+    for c in cols:
+        if c in out.columns:
+            out[f"{c}{suffix_12m}"] = acc_12m_curve_rate(out[c])
+    return out
+
+
+# -----------------------------
+# Coleta (você já tem sgs.get)
+# -----------------------------
+ipca_mensal = sgs.get({"ipca": "433"}, start="2014-01-31")
+ipca_12m    = sgs.get({"ipca_12m": "13522"}, start="2014-01-31")
+
+ipca_ld_m = sgs.get(
+    {"ipca_livres": "11428", "ipca_administrados": "4449"},
+    start="2011-01-31",
+)
+
+# -----------------------------
+# Padroniza índices (fim do mês)
+# -----------------------------
+ipca_mensal = ensure_month_end_index(ipca_mensal)
+ipca_12m    = ensure_month_end_index(ipca_12m)
+ipca_ld_m   = ensure_month_end_index(ipca_ld_m)
+
+# -----------------------------
+# Junta tudo num único DF
+# (alinha por data; ficará NaN onde não existir histórico)
+# -----------------------------
+df_ipca_all = (
+    ipca_mensal.join(ipca_12m, how="outer")
+               .join(ipca_ld_m, how="outer")
+               .sort_index()
+)
+
+# -----------------------------
+# Cria 12m calculado para as séries mensais (opcional para ipca)
+# - livres e administrados: essencial
+# - ipca: opcional (útil para auditoria vs ipca_12m oficial)
+# -----------------------------
+df_ipca_all = add_12m_from_monthly_rates(
+    df_ipca_all,
+    cols=["ipca_livres", "ipca_administrados", "ipca"],  # pode tirar "ipca" se não quiser
+    suffix_12m="_12m_calc"
+)
+
+# -----------------------------
+# Export dos dfs
+# -----------------------------
+df_ipca_all = df_ipca_all.dropna(how="all")
+
+# volta date pra coluna e exporta parquet
+df_ipca_all_out = df_ipca_all.reset_index().rename(columns={"index": "date"})
+
+df_ipca_all_out
+
+BASE_DIR = Path(__file__).resolve().parents[1]  # raiz do projeto
+out_dir = BASE_DIR / "data" / "processed"
+out_dir.mkdir(parents=True, exist_ok=True)
+
+df_ipca_all_out.to_parquet(out_dir / "ipca_all.parquet", index=False)
+# -----------------------------
 
 ibc_br= sgs.get({'ibc_br' : '24363'},
                start = '2014-03-31')
@@ -79,8 +174,6 @@ taxa_de_juros
 
 df_sgs = [
     ibc_br,
-    ipca_mensal,
-    ipca_12m,
     saldo_cred,
     inadimplencia,
     taxa_de_juros]
@@ -91,8 +184,9 @@ sgs_wide = reduce(
     lambda left, right: pd.merge(left, right, on="Date", how="outer"),
     df_sgs
 )
-sgs_wide
+
 sgs_wide=sgs_wide.reset_index()
+sgs_wide
 
 sgs_wide = sgs_wide.rename(columns={"Date": "date"})
 sgs_wide.dropna(inplace=True)
@@ -784,7 +878,7 @@ socioeco_wide = reduce(
 socioeco_wide.dropna(inplace=True)
 socioeco_wide.head()
 
-#Exportando os dados processados
+# Exportando os dados processados
 
 BASE_DIR = Path(__file__).resolve().parents[1]  # raiz do projeto
 out_dir = BASE_DIR / "data" / "processed"

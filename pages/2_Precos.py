@@ -190,11 +190,18 @@ else:
     with colB:
         clear_all = st.button("Limpar seleção", key="ipca_clear_all")
 
-    default_sel = ["IPCA (12m) — oficial"]
-    if select_all:
-        selected_labels = options
-    elif clear_all:
+
+    default_sel = ["IPCA (12m)"]
+    default_sel = [x for x in default_sel if x in options]
+    if not default_sel and options:
+        default_sel = [options[0]]
+
+    if clear_all:
+        st.session_state["ipca_series"] = []
         selected_labels = []
+    elif select_all:
+        st.session_state["ipca_series"] = options
+        selected_labels = options
     else:
         selected_labels = st.multiselect(
             "Selecionar séries (curvas)",

@@ -177,11 +177,10 @@ else:
 
     # gráfico (curvas em 12m + opcional mensal)
     series_map = {
-        "ipca_12m": "IPCA (12m) — oficial",
+        "ipca_12m": "IPCA (12m)",
         "ipca_livres_12m_calc": "IPCA livres (12m)",
         "ipca_administrados_12m_calc": "IPCA administrados (12m)",
-        # se quiser permitir mensal no mesmo gráfico, descomente:
-        # "ipca": "IPCA (mês)",
+        "ipca": "IPCA (mensal)",
     }
     options = list(series_map.values())
 

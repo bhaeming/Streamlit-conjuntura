@@ -644,77 +644,62 @@ out_dir.mkdir(parents=True, exist_ok=True)
 df_ind_com_ser_final.to_parquet(out_dir / "indust_comer_serv.parquet", index=False)
 
 
-#---------------------------------------------------------------------
-# Sócio econômicos
+# ---------------------------------------------------------
+# Dados Sócioeconômicos - SIDRA
+# ---------------------------------------------------------
 
-#- desemprego
+# Para onverter código trimestral SIDRA (YYYYQQ) em datetime
+# ---------------------------------------------------------
+def sidra_quarter_code_to_date(s: pd.Series) -> pd.Series:
+    s = s.astype(str).str.strip()
+    year = s.str.slice(0, 4).astype(int)
+    q = s.str.slice(4, 6).astype(int)  # 01..04
+    month_end = q.map({1: 3, 2: 6, 3: 9, 4: 12})
+    return pd.to_datetime(
+        dict(year=year, month=month_end, day=1),
+        errors="coerce"
+    ) + pd.offsets.MonthEnd(0)
 
-desemp = sidra.get_table(
-    table_code= 4099,
-    territorial_level='1',
-    ibge_territorial_code='1',
-    variable='4099',
-    period='all',
-    classifications='',
-    header='n'
-)
-desemp
-# desemprego por uf
-desemp_uf = sidra.get_table(
-    table_code= 4099,
-    territorial_level='3',
-    ibge_territorial_code='all',
-    variable='4099',
-    period='all',
-    classifications='',
-    header='n'
-)
-desemp_uf
 
-#Funções de tratamento desemprego
-
-def tidy_sidra_desemp(df: pd.DataFrame) -> pd.DataFrame:
-    desemprego = desemp_uf.copy()
-
-    # valor numérico (SIDRA às vezes vem como string)
-    desemprego["V"] = pd.to_numeric(desemprego["V"], errors="coerce")
-
-    # data a partir de D2C (YYYYQQ)
-    desemprego["date"] = sidra_quarter_code_to_date(desemprego["D2C"])
-
-    # colunas-alvo
-    desemprego = desemprego.rename(columns={
-        "D4N": "setor",
-        "D1N": "uf",
-        "V": "taxa_desemprego",
-    })[["date", "taxa_desemprego"]]
-
-    return desemprego
-
-desemprego_long = tidy_sidra_desemp(desemp)
-desemprego_long
-
-#Funções de tratamento desemprego por uf
-
-def tidy_sidra_desemp_uf(df: pd.DataFrame) -> pd.DataFrame:
+# Funções de limpeza e transformação trimestrais 
+# ---------------------------------------------------------
+def tidy_sidra_brasil(df: pd.DataFrame, out_col: str) -> pd.DataFrame:
     out = df.copy()
 
-    # valor numérico
     out["V"] = pd.to_numeric(out["V"], errors="coerce")
-
-    # data a partir do código trimestral (YYYYQQ)
     out["date"] = sidra_quarter_code_to_date(out["D2C"])
 
-    # UF: tenta nome (D1N) e cai para código (D1C)
+    # Se existir algum recorte adicional (ex: D4N), tenta filtrar "Total"
+    # (isso evita múltiplas linhas por trimestre)
+    if "D4N" in out.columns:
+        # tenta manter apenas "Total" (ajuste aqui se o texto for diferente)
+        mask_total = out["D4N"].astype(str).str.contains("Total", case=False, na=False)
+        if mask_total.any():
+            out = out.loc[mask_total].copy()
+
+    out = out.rename(columns={"V": out_col})[["date", out_col]]
+    out = out.dropna(subset=["date", out_col]).sort_values("date")
+
+    # blindagem: se ainda sobrar duplicata por trimestre, agrega (média)
+    out = out.groupby("date", as_index=False)[out_col].mean()
+
+    return out
+
+
+# ---------------------------------------------------------
+# UF (nível 3)
+# ---------------------------------------------------------
+def tidy_sidra_desemp_uf(df: pd.DataFrame) -> pd.DataFrame:
+    out = df.copy()
+    out["V"] = pd.to_numeric(out["V"], errors="coerce")
+    out["date"] = sidra_quarter_code_to_date(out["D2C"])
+
     if "D1N" in out.columns:
         out["uf"] = out["D1N"].astype(str).str.strip()
     elif "D1C" in out.columns:
         out["uf"] = out["D1C"].astype(str).str.strip()
     else:
         raise ValueError("Não encontrei a coluna de UF (D1N ou D1C) no dataframe do SIDRA.")
-
-    # (opcional) Se vier mais de uma série/recorte dentro do df, você pode filtrar aqui
-    # Exemplo: se houver dimensão D4N com algo que não seja total, etc.
 
     out = (
         out.rename(columns={"V": "taxa_desemprego"})
@@ -724,144 +709,98 @@ def tidy_sidra_desemp_uf(df: pd.DataFrame) -> pd.DataFrame:
            .reset_index(drop=True)
     )
 
+    # blindagem: 1 obs por (uf, date)
+    out = out.groupby(["uf", "date"], as_index=False)["taxa_desemprego"].mean()
+    out["trimestre"] = out["date"].dt.to_period("Q").astype(str)
+
     return out
-desemprego_uf_long = tidy_sidra_desemp_uf(desemp_uf)
-desemprego_uf_long
-desemprego_uf_long["uf"].unique().tolist()
 
-#ocupação
 
+# ---------------------------------------------------------
+# COLETA 
+# ---------------------------------------------------------
+
+# desemprego BR
+desemp = sidra.get_table(
+    table_code=4099,
+    territorial_level="1",
+    ibge_territorial_code="1",
+    variable="4099",
+    period="all",
+    classifications="",
+    header="n",
+)
+
+# desemprego UF
+desemp_uf = sidra.get_table(
+    table_code=4099,
+    territorial_level="3",
+    ibge_territorial_code="all",
+    variable="4099",
+    period="all",
+    classifications="",
+    header="n",
+)
+
+# ocupação BR
 ocup = sidra.get_table(
-    table_code= 6466,
-    territorial_level='1',
-    ibge_territorial_code='1',
-    variable='4097',
-    period='all',
-    classifications='',
-    header='n'
+    table_code=6466,
+    territorial_level="1",
+    ibge_territorial_code="1",
+    variable="4097",
+    period="all",
+    classifications="",
+    header="n",
 )
-ocup
 
-
-def tidy_sidra_ocup(df: pd.DataFrame) -> pd.DataFrame:
-    ocupacao = ocup.copy()
-
-    # valor numérico (SIDRA às vezes vem como string)
-    ocupacao["V"] = pd.to_numeric(ocupacao["V"], errors="coerce")
-
-    # data a partir de D2C (YYYYQQ)
-    ocupacao["date"] = sidra_quarter_code_to_date(ocupacao["D2C"])
-
-    # colunas-alvo
-    ocupacao = ocupacao.rename(columns={
-        "D4N": "setor",
-        "V": "taxa_ocupacao",
-    })[["date", "taxa_ocupacao"]]
-
-    return ocupacao
-
-ocupacao_long =  tidy_sidra_ocup(ocup)
-ocupacao_long
-
-
-# renda média
-
+# renda média BR
 renda = sidra.get_table(
-    table_code= 5439,
-    territorial_level='1',
-    ibge_territorial_code='1',
-    variable='5932',
-    period='all',
-    classifications={'12029': '99383'},
-    header='n'
+    table_code=5439,
+    territorial_level="1",
+    ibge_territorial_code="1",
+    variable="5932",
+    period="all",
+    classifications={"12029": "99383"},
+    header="n",
 )
-renda
 
-def tidy_sidra_renda(df: pd.DataFrame) -> pd.DataFrame:
-    renda_media = renda.copy()
-
-    # valor numérico (SIDRA às vezes vem como string)
-    renda_media["V"] = pd.to_numeric(renda_media["V"], errors="coerce")
-
-    # data a partir de D2C (YYYYQQ)
-    renda_media["date"] = sidra_quarter_code_to_date(renda_media["D2C"])
-
-    # colunas-alvo
-    renda_media = renda_media.rename(columns={
-        "V": "renda_media",
-    })[["date", "renda_media"]]
-
-    return renda_media
-
-renda_media_long = tidy_sidra_renda(renda)
-renda_media_long
-
-
-# informalidade
-
-infor= sidra.get_table(
-    table_code= 8529,
-    territorial_level='1',
-    ibge_territorial_code='1',
-    variable='12466',
-    period='all',
-    classifications='',
-    header='n'
+# informalidade BR
+infor = sidra.get_table(
+    table_code=8529,
+    territorial_level="1",
+    ibge_territorial_code="1",
+    variable="12466",
+    period="all",
+    classifications="",
+    header="n",
 )
-infor
 
-def tidy_sidra_informalidade(df: pd.DataFrame) -> pd.DataFrame:
-    informalidade = infor.copy()
-
-    # valor numérico (SIDRA às vezes vem como string)
-    informalidade["V"] = pd.to_numeric(informalidade["V"], errors="coerce")
-
-    # data a partir de D2C (YYYYQQ)
-    informalidade["date"] = sidra_quarter_code_to_date(informalidade["D2C"])
-
-    # colunas-alvo
-    informalidade = informalidade.rename(columns={
-        "V": "informalidade",
-    })[["date", "informalidade"]]
-
-    return informalidade
-informalidade_long = tidy_sidra_informalidade(infor)
-informalidade_long
-
-#Pessoas desalentadas
-
+# desalentadas BR
 desalent = sidra.get_table(
-    table_code= 6813,
-    territorial_level='1',
-    ibge_territorial_code='1',
-    variable='9869',
-    period='all',
-    classifications='',
-    header='n'
+    table_code=6813,
+    territorial_level="1",
+    ibge_territorial_code="1",
+    variable="9869",
+    period="all",
+    classifications="",
+    header="n",
 )
-desalent
 
-def tidy_sidra_desalent(df: pd.DataFrame) -> pd.DataFrame:
+# ---------------------------------------------------------
+# TIDY (agora correto)
+# ---------------------------------------------------------
+desemprego_long = tidy_sidra_brasil(desemp, "taxa_desemprego")
+ocupacao_long = tidy_sidra_brasil(ocup, "taxa_ocupacao")
+renda_media_long = tidy_sidra_brasil(renda, "renda_media")
+informalidade_long = tidy_sidra_brasil(infor, "informalidade")
+desalentadas_long = tidy_sidra_brasil(desalent, "desalentadas")
 
-    desalentadas = desalent.copy()
+desemprego_uf_long = tidy_sidra_desemp_uf(desemp_uf)
 
-    # valor numérico (SIDRA às vezes vem como string)
-    desalentadas["V"] = pd.to_numeric(desalentadas["V"], errors="coerce")
-    # data a partir de D2C (YYYYQQ)
-    desalentadas["date"] = sidra_quarter_code_to_date(desalentadas["D2C"])
 
-    # colunas-alvo
-    desalentadas = desalentadas.rename(columns={
-        "V": "desalentadas",
-    })[["date", "desalentadas"]]
-
-    return desalentadas
-
-desalentadas_long = tidy_sidra_desalent(desalent)
-desalentadas_long
-
-#juntando os dados sócioeconômicos
-
+# ---------------------------------------------------------
+# MERGE (wide)
+# ---------------------------------------------------------
 dfs = [
     desemprego_long,
     ocupacao_long,
@@ -872,17 +811,20 @@ dfs = [
 
 socioeco_wide = reduce(
     lambda left, right: pd.merge(left, right, on="date", how="outer"),
-    dfs
+    dfs,
 ).sort_values("date").reset_index(drop=True)
 
-socioeco_wide.dropna(inplace=True)
-socioeco_wide.head()
+# blindagem final: 1 obs por date
+socioeco_wide = socioeco_wide.groupby("date", as_index=False).mean(numeric_only=True).sort_values("date")
 
-# Exportando os dados processados
+# (opcional) não recomendo dropna total; prefira manter e tratar na página
+# socioeco_wide.dropna(inplace=True)
 
-BASE_DIR = Path(__file__).resolve().parents[1]  # raiz do projeto
+# ---------------------------------------------------------
+# Export
+# ---------------------------------------------------------
+BASE_DIR = Path(__file__).resolve().parents[1]
 out_dir = BASE_DIR / "data" / "processed"
-
 out_dir.mkdir(parents=True, exist_ok=True)
 
 socioeco_wide.to_parquet(out_dir / "socioeconomico_quarterly.parquet", index=False)

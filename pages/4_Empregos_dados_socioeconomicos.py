@@ -217,10 +217,12 @@ st.divider()
 # -----------------------
 # 2) Gráfico principal (linhas)
 # -----------------------
+
+
 st.header("Evolução trimestral")
 
-PCT_LABELS = {"Desemprego (%)", "Ocupação (%)", "Informalidade (%)"}  # ajuste
-BRL_LABELS = {"Renda média (R$)"}  # ajuste
+PCT_LABELS = {"Desemprego (%)", "Ocupação (%)", "Informalidade (%)"}
+BRL_LABELS = {"Renda média (R$)"}
 
 options = [name_map[c] for c in cols_available]
 default_labels = [lbl for lbl in ["Desemprego (%)", "Ocupação (%)"] if lbl in options]
@@ -245,30 +247,19 @@ if selected_cols:
     if mode == "Linhas (todas juntas)":
         fig = px.line(long_df, x="date", y="value", color="serie", title="Séries selecionadas")
         fig.update_layout(xaxis_title="Trimestre", yaxis_title="Valor", legend_title_text="Série")
-        st.plotly_chart(fig, width="stretch", key="socio_line_all")
+        st.plotly_chart(fig, use_container_width=True, key="socio_line_all")
 
     else:
-        # split por unidade (com base no label já mapeado)
         df_pct = long_df[long_df["serie"].isin(PCT_LABELS)].copy()
         df_brl = long_df[long_df["serie"].isin(BRL_LABELS)].copy()
 
         fig = go.Figure()
 
-        # eixo esquerdo: %
         for s_name, g in df_pct.groupby("serie"):
-            fig.add_trace(go.Scatter(
-                x=g["date"], y=g["value"],
-                mode="lines", name=s_name,
-                yaxis="y1"
-            ))
+            fig.add_trace(go.Scatter(x=g["date"], y=g["value"], mode="lines", name=s_name, yaxis="y"))
 
-        # eixo direito: R$
         for s_name, g in df_brl.groupby("serie"):
-            fig.add_trace(go.Scatter(
-                x=g["date"], y=g["value"],
-                mode="lines", name=s_name,
-                yaxis="y2"
-            ))
+            fig.add_trace(go.Scatter(x=g["date"], y=g["value"], mode="lines", name=s_name, yaxis="y2"))
 
         fig.update_layout(
             title="Séries selecionadas — eixo secundário por unidade",
@@ -279,7 +270,7 @@ if selected_cols:
             margin=dict(b=100),
         )
 
-        st.plotly_chart(fig, width="stretch", key="socio_line_dual")
+        st.plotly_chart(fig, use_container_width=True, key="socio_line_dual")
 else:
     st.warning("Selecione ao menos uma série para exibir o gráfico.")
 

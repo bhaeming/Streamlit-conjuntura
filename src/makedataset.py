@@ -31,9 +31,9 @@ out_dir.mkdir(parents=True, exist_ok=True)
 selic_mensal.to_parquet(out_dir / "selic_mensal.parquet", index=False)
 
 
-# -----------------------------
+# --------------------------------------------------
 # IPCA - consolida todos os ipcas relevantes do SGS
-# -----------------------------
+# --------------------------------------------------
 
 # Funções de tratamento e transformação #
 

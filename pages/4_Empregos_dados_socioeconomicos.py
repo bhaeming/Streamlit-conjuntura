@@ -131,7 +131,7 @@ def load_geojson(path: Path) -> dict:
         return json.load(f)
 
 # -----------------------
-# Mapa de siglas (caso seu parquet tenha nomes por extenso)
+# Mapa de siglas
 # -----------------------
 UF_NOME_TO_SIGLA = {
     "Acre": "AC", "Alagoas": "AL", "Amapá": "AP", "Amazonas": "AM", "Bahia": "BA",
@@ -160,7 +160,7 @@ if not SOCIO_PATH.exists():
 df = load_quarterly_parquet(SOCIO_PATH)
 df = add_quarter_col(df)
 
-# colunas esperadas (ajusta aqui se necessário)
+# Tratamento das colunas
 cols_expected = [
     "taxa_desemprego",
     "taxa_ocupacao",
@@ -304,11 +304,12 @@ else:
         st.warning("Sem dados para o trimestre selecionado.")
         st.stop()
 
-    # 2) padroniza UF para SIGLA (para bater com o GeoJSON, se ele tiver sigla)
+    # 2) padroniza UF para SIGLA 
     df_tri["uf_sigla"] = normalize_uf_to_sigla(df_tri["uf"])
 
     # 3) Descobrir automaticamente o campo do GeoJSON
     #    (prioriza campos de SIGLA; se não achar, cai para nome)
+
     props0 = geojson_uf["features"][0]["properties"]
     sample_keys = list(props0.keys())
 
@@ -362,21 +363,21 @@ else:
     if brasil_val is not None:
         st.caption(f"Brasil (PNAD): **{brasil_val:.1f}%** no trimestre {tri_sel}")
 
-    # featureidkey aponta para properties.<chave> (ex: properties.SIGLA)
+   
 featureidkey = f"properties.{geo_key}"
 
 fig_map = px.choropleth_mapbox(
     df_tri,
     geojson=geojson_uf,
-    locations="uf_sigla",                # a sua coluna padronizada (sigla)
-    featureidkey=featureidkey,           # campo do geojson com a sigla
+    locations="uf_sigla",              
+    featureidkey=featureidkey,          
     color="taxa_desemprego",
     color_continuous_scale="YlOrRd",
     range_color=(
         float(df_tri["taxa_desemprego"].min()),
         float(df_tri["taxa_desemprego"].max())
     ),
-    mapbox_style="carto-darkmatter",     # <<< fundo escuro bonito
+    mapbox_style="carto-darkmatter",  
     zoom=2.7,
     center={"lat": -14.2, "lon": -52.9},
     opacity=0.88,

@@ -184,9 +184,7 @@ if not SGS_PATH.exists():
 sgs = load_monthly_parquet_flexible(SGS_PATH)
 sgs = filter_last_months(sgs, 180)  # último 15 anos (ajuste)
 
-# -------------------
-# 2.1 Crédito (área)
-# -------------------
+
 st.subheader("Estoque de Crédito (em milhões de R$) ")
 
 credit_cols = [c for c in ["credito_pf", "credito_pj", "credito_total"] if c in sgs.columns]
@@ -206,27 +204,66 @@ else:
     selected_cols = [inv[l] for l in selected_labels if l in inv]
 
     if selected_cols:
+        # métricas
         cols_ui = st.columns(len(selected_cols))
         for i, col in enumerate(selected_cols):
-            d_last, v_last = last_value(sgs, col)
+            _, v_last = last_value(sgs, col)
             label = credit_map.get(col, col)
             cols_ui[i].metric(label, format_br_number(v_last, 0))
 
+        # df long
         long_credit = wide_to_long(sgs, selected_cols, credit_map)
-        fig_credit = build_area_from_long(long_credit, title="Crédito — estoques (séries selecionadas)", y_label="Saldo (nível)")
-        st.plotly_chart(fig_credit, width="stretch")
+
+        # regra: quando "total" estiver junto com componentes, NÃO empilhar
+        has_total = "credito_total" in selected_cols
+        has_parts = any(c in selected_cols for c in ["credito_pf", "credito_pj"])
+
+        if has_total and has_parts:
+            # comparação (linhas) — evita “soma” enganosa
+            fig_credit = px.line(
+                long_credit,
+                x="date",
+                y="value",
+                color="serie",
+                title="Crédito — comparação (não empilhado quando 'Total' está junto)",
+            )
+            fig_credit.update_layout(
+                xaxis_title="Data",
+                yaxis_title="Saldo (nível)",
+                legend_title_text="Série",
+            )
+
+            st.caption("Obs.: 'Crédito total' já contém PF e PJ; por isso o gráfico está em linhas (sem empilhamento).")
+
+        else:
+            # composição (stack) faz sentido quando não tem total junto
+            fig_credit = px.area(
+                long_credit,
+                x="date",
+                y="value",
+                color="serie",
+                title="Crédito — composição (empilhado)",
+                groupnorm=None,  # mantém em nível (não normaliza)
+            )
+            fig_credit.update_layout(
+                xaxis_title="Data",
+                yaxis_title="Saldo (nível)",
+                legend_title_text="Série",
+            )
+
+        st.plotly_chart(fig_credit, use_container_width=True)
 
         with st.expander("Dados recentes (crédito)", expanded=False):
             view_cols = ["date"] + selected_cols
-            st.dataframe(sgs[view_cols].dropna().tail(24), width="stretch")
+            st.dataframe(sgs[view_cols].dropna().tail(24), use_container_width=True)
+
     else:
         st.warning("Selecione ao menos uma série de crédito.")
-
 
 st.divider()
 
 # -------------------
-# 2.2 Juros (barra)
+# 2.2 Juros ( gráfico de barra)
 # -------------------
 st.subheader("Taxas de juros Anuais")
 

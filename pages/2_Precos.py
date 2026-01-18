@@ -9,7 +9,7 @@ import streamlit as st
 
 
 # ============================================================
-# CONFIG / PAGE
+# Configuração da página
 # ============================================================
 st.set_page_config(page_title="Preços ao consumidor e ao produtor", layout="wide")
 st.title("Preços ao consumidor e ao produtor")
@@ -27,7 +27,7 @@ IPCA_ALL_PATH = DATA_DIR / "ipca_all.parquet"
 
 
 # ============================================================
-# HELPERS: LOADERS / METRICS / TRANSFORMS
+# LOADERS / METRICS / TRANSFORMS
 # ============================================================
 
 def _ensure_date_column(df: pd.DataFrame) -> pd.DataFrame:
@@ -146,7 +146,7 @@ def ipca_contribuicoes(df_ipca_grupos: pd.DataFrame) -> pd.DataFrame:
 
 
 # ============================================================
-# SECTION 1 — IPCA (headline + gráfico)
+# SEÇÃO 1 — IPCA (headline + gráfico)
 # ============================================================
 st.header("Inflação ao consumidor (IPCA)")
 
@@ -175,7 +175,7 @@ else:
     with c5:
         metric_last(ipca_agg, "IPCA administrados (12m)", "ipca_administrados_12m_calc", fmt="{:.2f}%")
 
-    # gráfico (curvas em 12m + opcional mensal)
+    # gráfico (curvas em 12m + mensal)
     series_map = {
         "ipca_12m": "IPCA (12m)",
         "ipca_livres_12m_calc": "IPCA livres (12m)",
@@ -231,7 +231,7 @@ st.divider()
 
 
 # ============================================================
-# SECTION 2 — Composição do IPCA (contribuições por grupo)
+# SEÇÃO 2 — Composição do IPCA (contribuições por grupo)
 # ============================================================
 st.subheader("Composição do IPCA mensal (contribuições por grupo)")
 

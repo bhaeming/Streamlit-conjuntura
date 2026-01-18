@@ -214,7 +214,6 @@ else:
         # df long
         long_credit = wide_to_long(sgs, selected_cols, credit_map)
 
-        # regra: quando "total" estiver junto com componentes, NÃO empilhar
         has_total = "credito_total" in selected_cols
         has_parts = any(c in selected_cols for c in ["credito_pf", "credito_pj"])
 
@@ -225,7 +224,7 @@ else:
                 x="date",
                 y="value",
                 color="serie",
-                title="Crédito — comparação (não empilhado quando 'Total' está junto)",
+                title="Crédito — comparação",
             )
             fig_credit.update_layout(
                 xaxis_title="Data",
@@ -242,7 +241,7 @@ else:
                 x="date",
                 y="value",
                 color="serie",
-                title="Crédito — composição (empilhado)",
+                title="Crédito — gráfico de área e linhas empilhadas (valores a preços correntes)",
                 groupnorm=None,  # mantém em nível (não normaliza)
             )
             fig_credit.update_layout(

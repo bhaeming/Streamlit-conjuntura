@@ -586,12 +586,12 @@ pms_long
 
 #PMC
 pmc_raw = sidra.get_table(
-    table_code= 8880,
+    table_code= 8881,
     territorial_level='1',
     ibge_territorial_code='1',
     variable='11711',
     period='all',
-    classifications={'11046':'56734'},
+    classifications={'11046':'56736'},
     header='n'
 )
 pmc_raw
@@ -787,7 +787,7 @@ desalent = sidra.get_table(
 )
 
 # ---------------------------------------------------------
-# TIDY (agora correto)
+# Tragamento para formato tidy (long)
 # ---------------------------------------------------------
 desemprego_long = tidy_sidra_brasil(desemp, "taxa_desemprego")
 ocupacao_long = tidy_sidra_brasil(ocup, "taxa_ocupacao")
@@ -799,7 +799,7 @@ desemprego_uf_long = tidy_sidra_desemp_uf(desemp_uf)
 
 
 # ---------------------------------------------------------
-# MERGE (wide)
+# Transformação para formato long
 # ---------------------------------------------------------
 dfs = [
     desemprego_long,

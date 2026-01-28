@@ -1,15 +1,13 @@
 import pandas as pd
 import numpy as np
-import sidrapy as sd
 from bcb import sgs
 import sidrapy as sidra
 from sidrapy import get_table
-import numpy as np
 import statsmodels.api as sm
 import statsmodels.formula.api as smf
 from functools import reduce
 from pathlib import Path   
-from __future__ import annotations
+from building_features import tidy_sidra_monthly_single
 
 ###################################################################
 ### Dados SGS ###
@@ -79,7 +77,7 @@ def add_12m_from_monthly_rates(df: pd.DataFrame, cols: list[str], suffix_12m: st
 
 
 # -----------------------------
-# Coleta (você já tem sgs.get)
+# Coleta dados IPCA do SGS
 # -----------------------------
 ipca_mensal = sgs.get({"ipca": "433"}, start="2014-01-31")
 ipca_12m    = sgs.get({"ipca_12m": "13522"}, start="2014-01-31")
@@ -97,8 +95,7 @@ ipca_12m    = ensure_month_end_index(ipca_12m)
 ipca_ld_m   = ensure_month_end_index(ipca_ld_m)
 
 # -----------------------------
-# Junta tudo num único DF
-# (alinha por data; ficará NaN onde não existir histórico)
+# Limpeza a alinhamento de datas
 # -----------------------------
 df_ipca_all = (
     ipca_mensal.join(ipca_12m, how="outer")
@@ -134,7 +131,8 @@ out_dir.mkdir(parents=True, exist_ok=True)
 df_ipca_all_out.to_parquet(out_dir / "ipca_all.parquet", index=False)
 # -----------------------------
 
-ibc_br= sgs.get({'ibc_br' : '24363'},
+ibc_br= sgs.get({'ibc_br' : '24363',
+                 'ibc_br_dessaz': '24364'},
                start = '2014-03-31')
 ibc_br
 
@@ -514,7 +512,12 @@ ipp_long.to_parquet(out_dir / "ipp_m.parquet", index=False)
 
 #---------------------------
 #   DADOS MENSAIS DA INDÚSTRIA, COMÉRCIO E SERVIÇOS - PMC, PMS e PIM
+#---------------------------
 #PIM
+
+
+
+#PMS - Pesquisa Mensal de Serviços
 pim_raw = sidra.get_table(
     table_code= 8888,
     territorial_level='1',
@@ -525,33 +528,10 @@ pim_raw = sidra.get_table(
     header='n'
 )
 pim_raw
+#PMS - Pesquisa Mensal de Serviços
 
-
-def tidy_sidra_pim(df: pd.DataFrame) -> pd.DataFrame:
-    out = pim_raw.copy()
-
-    # valor numérico (SIDRA às vezes vem como string)
-    out["V"] = pd.to_numeric(out["V"], errors="coerce")
-
-    # data a partir de D2C (YYYYMM)
-    out["date"] = pd.to_datetime(out["D2C"].astype(str), format="%Y%m", errors="coerce") + pd.offsets.MonthEnd(0)
-
-    # colunas-alvo
-    out = out.rename(columns={
-        "V": "pim_12m",
-    })[["date","pim_12m"]]
-
-    # limpeza básica
-    out = out.dropna(subset=["date", "pim_12m"]).sort_values(["date"]).reset_index(drop=True)
-    return out
-
-pim_long = tidy_sidra_pim(pim_raw)
-pim_long
-
-
-#PMS
-
-pms_raw = sidra.get_table(
+## PMS em nível
+pms_raw_12 = sidra.get_table(
     table_code= 5906,
     territorial_level='1',
     ibge_territorial_code='1',
@@ -560,28 +540,45 @@ pms_raw = sidra.get_table(
     classifications={'11046': '56726'},
     header='n'
 )
-pms_raw
+pms_raw_12
 
-def tidy_sidra_pms(df: pd.DataFrame) -> pd.DataFrame:
-    out = pms_raw.copy()
+## PMS Dessazonalizada
+### PSM em nível
+pms_raw_2 = sidra.get_table(
+    table_code= 5906,
+    territorial_level='1',
+    ibge_territorial_code='1',
+    variable='7168',
+    period='all',
+    classifications={'11046': '56726'},
+    header='n'
+)
+pms_raw_2
 
-    # valor numérico (SIDRA às vezes vem como string)
-    out["V"] = pd.to_numeric(out["V"], errors="coerce")
+### PMS dessazonalizada
+pms_raw_3 = sidra.get_table(
+    table_code= 5906,
+    territorial_level='1',
+    ibge_territorial_code='1',
+    variable='7168',
+    period='all',
+    classifications={'11046': '56726'},
+    header='n'
+)
+pms_raw_3
 
-    # data a partir de D2C (YYYYMM)
-    out["date"] = pd.to_datetime(out["D2C"].astype(str), format="%Y%m", errors="coerce") + pd.offsets.MonthEnd(0)
+pms12_long = tidy_sidra_monthly_single(pms_raw_12, value_name="pms_raw_12")
+pms12_long
+pm22_long = tidy_sidra_monthly_single(pms_raw_2, value_name="pms_raw_2")
+pm22_long
+pm23_long = tidy_sidra_monthly_single(pms_raw_3, value_name="pms_raw_3")
+pm23_long
 
-    # colunas-alvo
-    out = out.rename(columns={
-        "V": "pms_12m",
-    })[["date","pms_12m"]]
+pm2_long = pms12_long.merge(pm22_long, on="date").merge(pm23_long, on="date")
+pm2_long
 
-    # limpeza básica
-    out = out.dropna(subset=["date", "pms_12m"]).sort_values(["date"]).reset_index(drop=True)
-    return out
 
-pms_long = tidy_sidra_pms(pms_raw)
-pms_long
+#pms_long
 
 
 #PMC
@@ -597,26 +594,7 @@ pmc_raw = sidra.get_table(
 pmc_raw
 
 
-def tidy_sidra_pmc(df: pd.DataFrame) -> pd.DataFrame:
-    out = pmc_raw.copy()
 
-    # valor numérico (SIDRA às vezes vem como string)
-    out["V"] = pd.to_numeric(out["V"], errors="coerce")
-
-    # data a partir de D2C (YYYYMM)
-    out["date"] = pd.to_datetime(out["D2C"].astype(str), format="%Y%m", errors="coerce") + pd.offsets.MonthEnd(0)
-
-    # colunas-alvo
-    out = out.rename(columns={
-        "V": "pmc_12m",
-    })[["date","pmc_12m"]]
-
-    # limpeza básica
-    out = out.dropna(subset=["date", "pmc_12m"]).sort_values(["date"]).reset_index(drop=True)
-    return out
-
-pmc_long = tidy_sidra_pmc(pmc_raw)
-pmc_long
 
 #exportando os dados pim/pms/pmc
 

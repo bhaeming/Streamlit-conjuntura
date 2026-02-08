@@ -9,14 +9,14 @@ import streamlit as st
 
 
 # ============================================================
-# Configuração da página
+# CONFIG
 # ============================================================
 st.set_page_config(page_title="Preços ao consumidor e ao produtor", layout="wide")
 st.title("Preços ao consumidor e ao produtor")
 
 
 # ============================================================
-# PATHS (dados processados)
+# PATHS
 # ============================================================
 BASE_DIR = Path(__file__).resolve().parents[1]
 DATA_DIR = BASE_DIR / "data" / "processed"
@@ -27,9 +27,8 @@ IPCA_ALL_PATH = DATA_DIR / "ipca_all.parquet"
 
 
 # ============================================================
-# LOADERS / METRICS / TRANSFORMS
+# HELPERS / LOADERS
 # ============================================================
-
 def _ensure_date_column(df: pd.DataFrame) -> pd.DataFrame:
     """
     Garante que exista a coluna 'date' (datetime), vindo de:
@@ -69,7 +68,6 @@ def load_ipp_long(path: Path) -> pd.DataFrame:
     df = pd.read_parquet(path).copy()
     df = _ensure_date_column(df)
 
-    # garante numérico
     if "value" in df.columns:
         df["value"] = pd.to_numeric(df["value"], errors="coerce")
 
@@ -145,104 +143,191 @@ def ipca_contribuicoes(df_ipca_grupos: pd.DataFrame) -> pd.DataFrame:
     return out
 
 
+def safe_multiselect(
+    label: str,
+    options: list[str],
+    default: list[str],
+    key: str,
+) -> list[str]:
+    """
+    Garante que defaults existam em options (evita StreamlitAPIException).
+    """
+    default = [d for d in default if d in options]
+    if not default and options:
+        default = [options[0]]
+    return st.multiselect(label, options, default=default, key=key)
+
+
 # ============================================================
-# SEÇÃO 1 — IPCA (headline + gráfico)
+# LOAD IPCA ALL once (usado em duas abas)
 # ============================================================
-st.header("Inflação ao consumidor (IPCA)")
-
-if not IPCA_ALL_PATH.exists():
-    st.error(f"Arquivo não encontrado: {IPCA_ALL_PATH}")
-    st.stop()
-
-ipca_agg = load_parquet_with_date(IPCA_ALL_PATH)
-
-needed = ["ipca", "ipca_12m", "ipca_livres_12m_calc", "ipca_administrados_12m_calc"]
-missing = [c for c in needed if c not in ipca_agg.columns]
-if missing:
-    st.warning(f"Colunas ausentes em ipca_all.parquet: {missing}")
-else:
-    # métricas
-    c1, c2, c3, c4, c5 = st.columns(5)
-    with c1:
-        metric_last(ipca_agg, "IPCA (mês)", "ipca", fmt="{:.2f}%")
-    with c2:
-        metric_last(ipca_agg, "IPCA (12m)", "ipca_12m", fmt="{:.2f}%")
-    with c3:
-        d_last, _ = last_value(ipca_agg, "ipca_12m")
-        st.metric("Última referência", d_last.strftime("%Y-%m") if d_last is not None else "n/d")
-    with c4:
-        metric_last(ipca_agg, "IPCA livres (12m)", "ipca_livres_12m_calc", fmt="{:.2f}%")
-    with c5:
-        metric_last(ipca_agg, "IPCA administrados (12m)", "ipca_administrados_12m_calc", fmt="{:.2f}%")
-
-    # gráfico (curvas em 12m + mensal)
-    series_map = {
-        "ipca_12m": "IPCA (12m)",
-        "ipca_livres_12m_calc": "IPCA livres (12m)",
-        "ipca_administrados_12m_calc": "IPCA administrados (12m)",
-        "ipca": "IPCA (mensal)",
-    }
-    options = list(series_map.values())
-
-    colA, colB = st.columns([1, 1])
-    with colA:
-        select_all = st.button("Selecionar tudo", key="ipca_select_all")
-    with colB:
-        clear_all = st.button("Limpar seleção", key="ipca_clear_all")
+ipca_agg: pd.DataFrame | None = None
+if IPCA_ALL_PATH.exists():
+    ipca_agg = load_parquet_with_date(IPCA_ALL_PATH)
 
 
-    default_sel = ["IPCA (12m)"]
-    default_sel = [x for x in default_sel if x in options]
-    if not default_sel and options:
-        default_sel = [options[0]]
+# ============================================================
+# TABS
+# ============================================================
+tabs = st.tabs(["IPCA agregado", "IPCA desagregado", "Preços ao produtor"])
 
-    if clear_all:
-        st.session_state["ipca_series"] = []
-        selected_labels = []
-    elif select_all:
-        st.session_state["ipca_series"] = options
-        selected_labels = options
+
+# ============================================================
+# TAB 1 — IPCA agregado
+# ============================================================
+with tabs[0]:
+    st.subheader("IPCA agregado")
+
+    if not IPCA_ALL_PATH.exists():
+        st.error(f"Arquivo não encontrado: {IPCA_ALL_PATH}")
+        st.stop()
+
+    assert ipca_agg is not None
+
+    needed = ["ipca", "ipca_12m", "ipca_livres_12m_calc", "ipca_administrados_12m_calc"]
+    missing = [c for c in needed if c not in ipca_agg.columns]
+    if missing:
+        st.warning(f"Colunas ausentes em ipca_all.parquet: {missing}")
     else:
-        selected_labels = st.multiselect(
-            "Selecionar séries (curvas)",
-            options,
-            default=default_sel,
-            key="ipca_series",
-        )
+        c1, c2, c3, c4, c5 = st.columns(5)
+        with c1:
+            metric_last(ipca_agg, "IPCA (mês)", "ipca", fmt="{:.2f}%")
+        with c2:
+            metric_last(ipca_agg, "IPCA (12m)", "ipca_12m", fmt="{:.2f}%")
+        with c3:
+            d_last, _ = last_value(ipca_agg, "ipca_12m")
+            st.metric("Última referência", d_last.strftime("%Y-%m") if d_last is not None else "n/d")
+        with c4:
+            metric_last(ipca_agg, "IPCA livres (12m)", "ipca_livres_12m_calc", fmt="{:.2f}%")
+        with c5:
+            metric_last(ipca_agg, "IPCA administrados (12m)", "ipca_administrados_12m_calc", fmt="{:.2f}%")
 
-    inv = {v: k for k, v in series_map.items()}
-    selected_cols = [inv[l] for l in selected_labels if l in inv]
+        series_map = {
+            "ipca_12m": "IPCA (12m)",
+            "ipca_livres_12m_calc": "IPCA livres (12m)",
+            "ipca_administrados_12m_calc": "IPCA administrados (12m)",
+            "ipca": "IPCA (mensal)",
+        }
+        options = list(series_map.values())
 
-    if not selected_cols:
-        st.warning("Nenhuma série selecionada.")
-    else:
-        plot_long = wide_to_long(ipca_agg, selected_cols, series_map)
-        fig = px.line(plot_long, x="date", y="value", color="serie", title="IPCA — curvas em 12 meses")
-        fig.update_layout(xaxis_title="Data", yaxis_title="Variação (%)", legend_title_text="Série")
-        st.plotly_chart(fig, use_container_width=True)
+        colA, colB = st.columns([1, 1])
+        with colA:
+            select_all = st.button("Selecionar tudo", key="ipca_select_all")
+        with colB:
+            clear_all = st.button("Limpar seleção", key="ipca_clear_all")
 
-    with st.expander("Dados recentes (IPCA)", expanded=False):
-        st.dataframe(
-            ipca_agg[["date", "ipca", "ipca_12m"]].dropna().tail(24),
-            use_container_width=True,
-        )
+        default_sel = ["IPCA (12m)"]
 
-st.divider()
+        if clear_all:
+            st.session_state["ipca_series"] = []
+            selected_labels = []
+        elif select_all:
+            st.session_state["ipca_series"] = options
+            selected_labels = options
+        else:
+            selected_labels = safe_multiselect(
+                "Selecionar séries (curvas)",
+                options,
+                default_sel,
+                key="ipca_series",
+            )
+
+        inv = {v: k for k, v in series_map.items()}
+        selected_cols = [inv[l] for l in selected_labels if l in inv]
+
+        if not selected_cols:
+            st.warning("Nenhuma série selecionada.")
+        else:
+            plot_long = wide_to_long(ipca_agg, selected_cols, series_map)
+            fig = px.line(plot_long, x="date", y="value", color="serie", title="IPCA — curvas selecionadas")
+            fig.update_layout(xaxis_title="Data", yaxis_title="Variação (%)", legend_title_text="Série")
+            st.plotly_chart(fig, use_container_width=True)
+
+        with st.expander("Dados recentes (IPCA)", expanded=False):
+            st.dataframe(
+                ipca_agg[["date", "ipca", "ipca_12m"]].dropna().tail(24),
+                use_container_width=True,
+            )
 
 
 # ============================================================
-# SEÇÃO 2 — Composição do IPCA (contribuições por grupo)
+# TAB 2 — IPCA desagregado
 # ============================================================
-st.subheader("Composição do IPCA mensal (contribuições por grupo)")
+with tabs[1]:
+    st.subheader("IPCA desagregado")
 
-if not IPCA_GRUPOS_PATH.exists():
-    st.info(f"Arquivo não encontrado: {IPCA_GRUPOS_PATH}")
-    st.info("Gere o ipca_grupos.parquet no pipeline para habilitar esta visualização.")
-else:
+    if not IPCA_GRUPOS_PATH.exists():
+        st.info(f"Arquivo não encontrado: {IPCA_GRUPOS_PATH}")
+        st.info("Gere o ipca_grupos.parquet no pipeline para habilitar esta visualização.")
+        st.stop()
+
     ipca_g = load_ipca_grupos_long(IPCA_GRUPOS_PATH)
-    contrib = ipca_contribuicoes(ipca_g)
 
-    # referência mensal
+    # ============================================================
+    # 2.1) NOVO — gráfico em LINHAS: variação mensal por grupo
+    # ============================================================
+    st.markdown("#### Variação mensal do IPCA por grupo (%)")
+
+    df_var = ipca_g[ipca_g["indicador"] == "variacao_mensal"].copy()
+    if df_var.empty:
+        st.warning("Não encontrei indicador 'variacao_mensal' no ipca_grupos.parquet.")
+    else:
+        grupos_all = sorted(df_var["grupo"].dropna().unique().tolist())
+
+        colA, colB = st.columns([1, 1])
+        with colA:
+            select_all_g = st.button("Selecionar tudo", key="ipca_grp_line_all")
+        with colB:
+            clear_all_g = st.button("Limpar", key="ipca_grp_line_none")
+
+        # default: alguns grupos comuns, se existirem
+        default_candidates = [
+            "Alimentação e bebidas",
+            "Habitação",
+            "Transportes",
+            "Saúde e cuidados pessoais",
+            "Educação",
+        ]
+        default_sel = [g for g in default_candidates if g in grupos_all]
+        if not default_sel and grupos_all:
+            default_sel = grupos_all[:6]
+
+        if clear_all_g:
+            st.session_state["ipca_grp_line_ms"] = []
+            grupos_sel = []
+        elif select_all_g:
+            st.session_state["ipca_grp_line_ms"] = grupos_all
+            grupos_sel = grupos_all
+        else:
+            grupos_sel = safe_multiselect(
+                "Selecionar grupos (linhas)",
+                grupos_all,
+                default_sel,
+                key="ipca_grp_line_ms",
+            )
+
+        if not grupos_sel:
+            st.info("Selecione ao menos um grupo para exibir as linhas.")
+        else:
+            df_plot = df_var[df_var["grupo"].isin(grupos_sel)].copy()
+            fig_line = px.line(
+                df_plot.sort_values("date"),
+                x="date",
+                y="value",
+                color="grupo",
+                title="IPCA por grupo — variação mensal (%)",
+            )
+            fig_line.update_layout(xaxis_title="Data", yaxis_title="Variação mensal (%)", legend_title_text="Grupo")
+            st.plotly_chart(fig_line, use_container_width=True)
+
+    st.divider()
+
+    # ============================================================
+    # 2.2) Contribuições (barras empilhadas) + linha do índice geral
+    # ============================================================
+    st.markdown("#### Contribuições do IPCA mensal por grupo (p.p.)")
+
+    contrib = ipca_contribuicoes(ipca_g)
     contrib["ref"] = contrib["date"].dt.to_period("M").astype(str)
 
     min_d = contrib["date"].min()
@@ -265,12 +350,12 @@ else:
         st.warning("Sem dados no período selecionado.")
         st.stop()
 
-    # remove agregados
+    # remove agregados tipo índice geral
     mask_geral = contrib_f["grupo"].str.contains(r"índice geral|geral|índice\s+cheio", case=False, na=False)
     contrib_f = contrib_f[~mask_geral].copy()
 
     with c_right:
-        st.caption("Seleção de grupos")
+        st.caption("Seleção de grupos (barras)")
         grupos_all = sorted(contrib_f["grupo"].dropna().unique().tolist())
 
         b1, b2 = st.columns(2)
@@ -284,7 +369,7 @@ else:
         elif clr_all:
             grupos_sel = []
         else:
-            grupos_sel = st.multiselect(
+            grupos_sel = safe_multiselect(
                 "Escolher grupos (empilhado)",
                 grupos_all,
                 default=grupos_all,
@@ -301,14 +386,12 @@ else:
         st.warning("Nenhum grupo selecionado.")
         st.stop()
 
-    contrib_f["grupo_plot"] = contrib_f["grupo"]
     if agrupar_outros:
         contrib_f["grupo_plot"] = contrib_f["grupo"].where(contrib_f["grupo"].isin(grupos_sel), "Outros")
     else:
         contrib_f = contrib_f[contrib_f["grupo"].isin(grupos_sel)].copy()
         contrib_f["grupo_plot"] = contrib_f["grupo"]
 
-    # stack por mês
     plot_stack = (
         contrib_f.groupby(["ref", "grupo_plot"], as_index=False)["contrib_pp"]
         .sum()
@@ -316,7 +399,6 @@ else:
     )
     plot_stack["date"] = pd.to_datetime(plot_stack["ref"] + "-01") + pd.offsets.MonthEnd(0)
 
-    # total
     total_pp = (
         plot_stack.groupby("ref", as_index=False)["contrib_pp"]
         .sum()
@@ -325,18 +407,17 @@ else:
     )
     total_pp["date"] = pd.to_datetime(total_pp["ref"] + "-01") + pd.offsets.MonthEnd(0)
 
-    # linha do índice geral (usa ipca mensal se tiver; senão usa somatório)
     line_df = total_pp[["date", "ref", "ipca_calc"]].copy()
     line_df["indice_geral"] = line_df["ipca_calc"]
 
-    if "ipca" in ipca_agg.columns:
+    # se existir ipca mensal no ipca_all, usa como linha principal
+    if ipca_agg is not None and "ipca" in ipca_agg.columns:
         tmp = ipca_agg[["date", "ipca"]].dropna().copy()
         tmp["ref"] = tmp["date"].dt.to_period("M").astype(str)
         ipca_headline = tmp.groupby("ref", as_index=False)["ipca"].last()
         line_df = line_df.merge(ipca_headline, on="ref", how="left")
         line_df["indice_geral"] = line_df["ipca"].combine_first(line_df["ipca_calc"])
 
-    # métricas
     last_ref = total_pp["ref"].iloc[-1]
     last_calc = float(total_pp.loc[total_pp["ref"] == last_ref, "ipca_calc"].iloc[0])
 
@@ -365,7 +446,6 @@ else:
             st.caption("Maior alívio (no mês)")
             st.write(f"**{worst['grupo_plot'].iloc[0]}**: {float(worst['contrib_pp'].iloc[0]):+.2f} p.p.")
 
-    # gráfico combinado
     fig_combo = px.bar(
         plot_stack,
         x="date",
@@ -406,38 +486,40 @@ else:
 
     st.plotly_chart(fig_combo, use_container_width=True, key="ipca_combo")
 
-
     with st.expander("Dados (contribuições)", expanded=False):
         st.dataframe(plot_stack.sort_values(["date", "grupo_plot"]).tail(36), use_container_width=True)
 
-st.divider()
-
 
 # ============================================================
-# SECTION 3 — IPP
+# TAB 3 — IPP
 # ============================================================
-st.header("Preços ao produtor em 12 meses (IPP)")
+with tabs[2]:
+    st.subheader("Preços ao produtor (IPP)")
 
-if not IPP_PATH.exists():
-    st.info(f"Arquivo não encontrado: {IPP_PATH}")
-    st.stop()
+    if not IPP_PATH.exists():
+        st.info(f"Arquivo não encontrado: {IPP_PATH}")
+        st.stop()
 
-ipp = load_ipp_long(IPP_PATH)
+    ipp = load_ipp_long(IPP_PATH)
 
-required_cols = {"date", "setor_ipp", "value"}
-if not required_cols.issubset(set(ipp.columns)):
-    st.warning(f"IPP precisa ter as colunas {required_cols}. Colunas atuais: {list(ipp.columns)}")
-else:
+    required_cols = {"date", "setor_ipp", "value"}
+    if not required_cols.issubset(set(ipp.columns)):
+        st.warning(f"IPP precisa ter as colunas {required_cols}. Colunas atuais: {list(ipp.columns)}")
+        st.stop()
+
     setores = sorted(ipp["setor_ipp"].dropna().unique().tolist())
+    if not setores:
+        st.warning("Não encontrei setores em 'setor_ipp'.")
+        st.stop()
 
     col1, col2 = st.columns([2, 1])
     with col1:
-        setor_sel = st.selectbox("Selecionar setor do IPP", setores, index=0)
+        setor_sel = st.selectbox("Selecionar setor do IPP", setores, index=0, key="ipp_setor_sel")
     with col2:
         d_last, v_last = last_value_for_sector(ipp, setor_sel)
         st.metric("Última observação", f"{v_last:.2f}%" if v_last is not None else "n/d")
 
-    modo = st.radio("Visualização", ["Setor selecionado", "Comparar setores"], horizontal=True)
+    modo = st.radio("Visualização", ["Setor selecionado", "Comparar setores"], horizontal=True, key="ipp_mode")
 
     if modo == "Setor selecionado":
         plot_df = ipp[ipp["setor_ipp"] == setor_sel].sort_values("date")
@@ -445,7 +527,16 @@ else:
         fig.update_layout(xaxis_title="Data", yaxis_title="Variação (%)")
     else:
         default_comp = setores[:3]
-        comp_sel = st.multiselect("Selecionar setores para comparar", setores, default=default_comp, key="ipp_comp")
+        comp_sel = st.multiselect(
+            "Selecionar setores para comparar",
+            setores,
+            default=default_comp,
+            key="ipp_comp",
+        )
+        if not comp_sel:
+            st.warning("Selecione ao menos um setor.")
+            st.stop()
+
         plot_df = ipp[ipp["setor_ipp"].isin(comp_sel)].sort_values("date")
         fig = px.line(plot_df, x="date", y="value", color="setor_ipp", title="IPP — comparação entre setores")
         fig.update_layout(xaxis_title="Data", yaxis_title="Variação (%)", legend_title_text="Setor")

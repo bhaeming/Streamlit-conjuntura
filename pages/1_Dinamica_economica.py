@@ -1,28 +1,37 @@
+from __future__ import annotations
+
 from pathlib import Path
+
 import pandas as pd
 import plotly.express as px
 import streamlit as st
 
+
+# ============================================================
+# CONFIG
+# ============================================================
 st.set_page_config(page_title="Dinâmica econômica", layout="wide")
 st.title("Dinâmica econômica")
 
 
-# -----------------------
-# Caminhos para o data set
-# -----------------------
-BASE_DIR = Path(__file__).resolve().parents[1]  # # dados/ processed - acessa os dados tratados
+# ============================================================
+# PATHS
+# ============================================================
+BASE_DIR = Path(__file__).resolve().parents[1]
 DATA_DIR = BASE_DIR / "data" / "processed"
 
 PIB_PATH = DATA_DIR / "pibs_quarterly.parquet"
 IBC_PATH = DATA_DIR / "sgs_dados.parquet"
 PPP_PATH = DATA_DIR / "indust_comer_serv.parquet"
+IBCUF_PATH = DATA_DIR / "ibc_uf.parquet"  # (placeholder p/ você usar depois)
 
-# -----------------------
-# Loaders- funções utilizadas (building features) para carregar dados e tratar os dados
-# -----------------------
+
+# ============================================================
+# LOADERS
+# ============================================================
 @st.cache_data(show_spinner=False)
 def load_parquet(path: Path) -> pd.DataFrame:
-    df = pd.read_parquet(path)
+    df = pd.read_parquet(path).copy()
 
     if "date" in df.columns:
         df["date"] = pd.to_datetime(df["date"], errors="coerce")
@@ -35,59 +44,84 @@ def load_parquet(path: Path) -> pd.DataFrame:
 
 @st.cache_data(show_spinner=False)
 def load_sgs_monthly(path: Path) -> pd.DataFrame:
+    """
+    Loader mensal robusto (date em 'date', 'Date' ou índice).
+    """
     df = pd.read_parquet(path).copy()
 
-    # 1) tenta coluna 'date'
     if "date" in df.columns:
         df["date"] = pd.to_datetime(df["date"], errors="coerce")
-
-    # 2) tenta 'Date'
     elif "Date" in df.columns:
         df["date"] = pd.to_datetime(df["Date"], errors="coerce")
-
-    # 3) data está no índice (ou outra coluna após reset)
     else:
         df = df.reset_index()
-
-        # tenta candidatos comuns
         candidates = [c for c in ["date", "Date", "index"] if c in df.columns]
         if candidates:
             df["date"] = pd.to_datetime(df[candidates[0]], errors="coerce")
         else:
-            # fallback: tenta a primeira coluna
-            first_col = df.columns[0]
-            df["date"] = pd.to_datetime(df[first_col], errors="coerce")
+            df["date"] = pd.to_datetime(df[df.columns[0]], errors="coerce")
 
     df = df.dropna(subset=["date"]).sort_values("date").reset_index(drop=True)
     return df
 
 
 @st.cache_data(show_spinner=False)
-
 def load_indus_comer_serv(path: Path) -> pd.DataFrame:
+    """
+    Loader mensal (PIM/PMC/PMS). Garante coluna 'date' e ordena.
+    """
     df = pd.read_parquet(path).copy()
- # Se a coluna date não existir, traze do índice e, após isso, converte para datetime.
     if "date" not in df.columns:
         df = df.reset_index()
 
     df["date"] = pd.to_datetime(df["date"], errors="coerce")
-
-    # garante ordem e remove datas inválidas
     df = df.dropna(subset=["date"]).sort_values("date").reset_index(drop=True)
-
     return df
 
-# Transformações adicionais
 
+# ============================================================
+# TRANSFORMS / HELPERS
+# ============================================================
 def add_quarter_label(df: pd.DataFrame) -> pd.DataFrame:
     out = df.copy()
     out["trimestre"] = out["date"].dt.to_period("Q").astype(str)
     return out
 
 
-# -----------------------
-# Funções para construção de gráficos
-# -----------------------
+def last_value(df: pd.DataFrame, col: str):
+    s = df[["date", col]].dropna().sort_values("date")
+    if s.empty:
+        return None, None
+    return s.iloc[-1]["date"], float(s.iloc[-1][col])
+
+
+def render_last_value_metrics(df: pd.DataFrame, cols: list[tuple[str, str]]):
+    """
+    cols = [(col_name, label), ...]
+    """
+    n = len(cols)
+    cols_ui = st.columns(n)
+
+    for i, (col, label) in enumerate(cols):
+        if col not in df.columns:
+            cols_ui[i].metric(label, "n/d")
+            continue
+
+        d, v = last_value(df, col)
+        if v is None:
+            cols_ui[i].metric(label, "n/d")
+        else:
+            cols_ui[i].metric(label, f"{v:.1f}%")
+
+
+def wide_to_long(df: pd.DataFrame, date_col: str, value_cols: list[str], name_map: dict[str, str]) -> pd.DataFrame:
+    out = df[[date_col] + value_cols].copy()
+    out = out.melt(id_vars=[date_col], var_name="serie", value_name="value")
+    out["serie"] = out["serie"].map(name_map).fillna(out["serie"])
+    out["value"] = pd.to_numeric(out["value"], errors="coerce")
+    return out.dropna(subset=[date_col, "value"]).sort_values(date_col)
+
+
 def build_pib_bar_figure(df: pd.DataFrame, dim_col: str | None):
     if dim_col is None:
         fig = px.bar(
@@ -122,12 +156,7 @@ def build_line_figure(df: pd.DataFrame, col: str, title: str, y_label: str):
     return fig
 
 
-# -----------------------
-# Funções para criar as métricas em destaque
-# ----------------------
-
 def compute_ibc_metrics(df: pd.DataFrame, col: str = "ibc_br") -> dict:
-    # Série temporal limpa e ordenada
     s = (
         df[["date", col]]
         .dropna()
@@ -145,16 +174,15 @@ def compute_ibc_metrics(df: pd.DataFrame, col: str = "ibc_br") -> dict:
     # m/m (%)
     mom = None
     if len(s) >= 2:
-        prev_date = s.index[-2]
-        prev_value = s.iloc[-2]
+        prev_value = float(s.iloc[-2])
         if prev_value != 0:
             mom = ((last_value / prev_value) - 1) * 100
 
-    # 12m acumulado (%): soma dos últimos 12 / soma dos 12 imediatamente anteriores
+    # 12m acumulado (%): soma últimos 12 / soma 12 anteriores
     acc12 = None
     if len(s) >= 24:
-        last_12 = s.iloc[-12:].sum()
-        prev_12 = s.iloc[-24:-12].sum()
+        last_12 = float(s.iloc[-12:].sum())
+        prev_12 = float(s.iloc[-24:-12].sum())
         if prev_12 != 0:
             acc12 = ((last_12 / prev_12) - 1) * 100
 
@@ -167,66 +195,23 @@ def compute_ibc_metrics(df: pd.DataFrame, col: str = "ibc_br") -> dict:
     prev_period = s[(s.index.year == (year - 1)) & (s.index.month <= month_ref)]
 
     if (not cur_period.empty) and (not prev_period.empty):
-        cur_sum = cur_period.sum()
-        prev_sum = prev_period.sum()
+        cur_sum = float(cur_period.sum())
+        prev_sum = float(prev_period.sum())
         if prev_sum != 0:
             ytd = ((cur_sum / prev_sum) - 1) * 100
 
-    return {
-        "mom": mom,            # variação mensal (%)
-        "acc12": acc12,        # 12m acumulado (%), pelo critério de somas
-        "ytd": ytd,            # acumulado no ano (%)
-        "last_date": last_date,
-        "last_value": last_value,
-    }
+    return {"mom": mom, "acc12": acc12, "ytd": ytd, "last_date": last_date, "last_value": last_value}
 
 
-def last_value(df: pd.DataFrame, col: str):
-    s = df[["date", col]].dropna().sort_values("date")
-    if s.empty:
-        return None, None
-    return s.iloc[-1]["date"], float(s.iloc[-1][col])
-
-
-
-def render_last_value_metrics(df: pd.DataFrame, cols: list[tuple[str, str]]):
-    # cols = [(col_name, label), ...]
-    n = len(cols)
-    cols_ui = st.columns(n)
-
-    for i, (col, label) in enumerate(cols):
-        if col not in df.columns:
-            cols_ui[i].metric(label, "n/d")
-            continue
-
-        d, v = last_value(df, col)
-        if v is None:
-            cols_ui[i].metric(label, "n/d")
-        else:
-            cols_ui[i].metric(label, f"{v:.1f}%")
-
-def wide_to_long(df: pd.DataFrame, date_col: str, value_cols: list[str], name_map: dict[str, str]) -> pd.DataFrame:
-    out = df[[date_col] + value_cols].copy()
-    out = out.melt(id_vars=[date_col], var_name="serie", value_name="value")
-    out["serie"] = out["serie"].map(name_map).fillna(out["serie"])
-    out["value"] = pd.to_numeric(out["value"], errors="coerce")
-    return out.dropna(subset=[date_col, "value"]).sort_values(date_col)
-
-
-# -----------------------
-# App
-# -----------------------
-def main() -> None:
-    st.header("Atividade econômica")
-
-    # =====================
-    # PIB (trimestral)
-    # =====================
-    st.subheader("Produto Interno Bruto (trimestral)")
+# ============================================================
+# UI SECTIONS (ABAS)
+# ============================================================
+def tab_pib():
+    st.subheader("PIB (IBGE) — trimestral")
 
     if not PIB_PATH.exists():
         st.error(f"Arquivo não encontrado: {PIB_PATH}")
-        st.stop()
+        return
 
     pib = load_parquet(PIB_PATH)
     pib = add_quarter_label(pib)
@@ -234,65 +219,145 @@ def main() -> None:
     possible_dim_cols = [c for c in ["setor", "grupo"] if c in pib.columns]
     dim_col = possible_dim_cols[0] if possible_dim_cols else None
 
-    if dim_col is not None:
-        options = sorted(pib[dim_col].dropna().unique().tolist())
+    if dim_col is None:
+        st.info("Não encontrei dimensão ('setor' ou 'grupo'). Mostrando série agregada.")
+        plot_df = pib.copy()
+        if plot_df.empty:
+            st.warning("Sem dados de PIB.")
+            return
+        fig = build_pib_bar_figure(plot_df, dim_col=None)
+        st.plotly_chart(fig, use_container_width=True)
+        with st.expander("Dados recentes", expanded=False):
+            st.dataframe(plot_df.sort_values("date").tail(16), use_container_width=True)
+        return
 
-        default_candidates = [
-            "PIB a preços de mercado",
-            #"Serviços - total",
-            #"Indústria - total",
-            #"Agropecuária - total",
-            "Formação bruta de capital fixo",
-           # "Consumo das famílias",
-        ]
-        default_sel = [s for s in default_candidates if s in options] or options[:4]
+    # seletores
+    options = sorted(pib[dim_col].dropna().unique().tolist())
+    default_candidates = [
+        "PIB a preços de mercado",
+        "Formação bruta de capital fixo",
+    ]
+    default_sel = [x for x in default_candidates if x in options]
+    if not default_sel:
+        default_sel = options[:4]
 
-        col1, col2 = st.columns([1, 1])
-        with col1:
-            select_all = st.button("Selecionar tudo", key="pib_select_all")
-        with col2:
-            clear_all = st.button("Limpar seleção", key="pib_clear_all")
+    c1, c2 = st.columns([1, 1])
+    with c1:
+        select_all = st.button("Selecionar tudo", key="pib_select_all")
+    with c2:
+        clear_all = st.button("Limpar seleção", key="pib_clear_all")
 
-        if select_all:
-            selected = options
-        elif clear_all:
-            selected = []
-        else:
-            selected = st.multiselect("Selecionar séries", options, default=default_sel, key="pib_series")
+    # default seguro
+    default_sel = [x for x in default_sel if x in options]
+    if not default_sel and options:
+        default_sel = [options[0]]
+
+    if clear_all:
+        st.session_state["pib_series"] = []
+        selected = []
+    elif select_all:
+        st.session_state["pib_series"] = options
+        selected = options
     else:
-        selected = None
+        selected = st.multiselect("Selecionar séries", options, default=default_sel, key="pib_series")
 
-    with st.expander("Dados mais recentes do PIB e seus setores", expanded=False):
-        st.write("Colunas:", list(pib.columns))
-
-        if dim_col is None:
-            df_view = pib.sort_values("date").tail(12)
-        else:
-            df_view = (
-                pib[pib[dim_col].isin(selected if selected is not None else [])]
-                .sort_values("date")
-                .groupby(dim_col, as_index=False)
-                .tail(4)
-            )
-
-        st.dataframe(df_view, width="stretch")
-
-    plot_df = pib.copy()
-    if dim_col is not None:
-        plot_df = plot_df[plot_df[dim_col].isin(selected)]
+    plot_df = pib[pib[dim_col].isin(selected)].copy() if selected else pd.DataFrame()
 
     if plot_df.empty:
-        st.warning("Nenhuma série selecionada. Selecione ao menos uma série para exibir o gráfico do PIB.")
+        st.warning("Nenhuma série selecionada. Selecione ao menos uma série para exibir o gráfico.")
+        return
+
+    fig = build_pib_bar_figure(plot_df, dim_col=dim_col)
+    st.plotly_chart(fig, use_container_width=True)
+
+    with st.expander("Dados recentes (PIB e componentes)", expanded=False):
+        df_view = (
+            plot_df.sort_values("date")
+            .groupby(dim_col, as_index=False)
+            .tail(6)
+        )
+        st.dataframe(df_view, use_container_width=True)
+
+
+def tab_dinamicas():
+    st.subheader("Dinâmicas mensais — PIM / PMC / PMS (12 meses)")
+
+    if not PPP_PATH.exists():
+        st.info(f"Arquivo não encontrado: {PPP_PATH}")
+        return
+
+    ppp = load_indus_comer_serv(PPP_PATH)
+
+    # métricas headline
+    render_last_value_metrics(
+        ppp,
+        cols=[
+            ("pim_12m", "PIM — 12 meses (%)"),
+            ("pmc_12m", "PMC — 12 meses (%)"),
+            ("pms_12m", "PMS — 12 meses (%)"),
+        ],
+    )
+
+    series_map = {
+        "pim_12m": "PIM — 12 meses (%)",
+        "pmc_12m": "PMC — 12 meses (%)",
+        "pms_12m": "PMS — 12 meses (%)",
+    }
+
+    series_cols = [c for c in series_map.keys() if c in ppp.columns]
+    if not series_cols:
+        st.warning("Não encontrei as colunas esperadas (pim_12m, pmc_12m, pms_12m).")
+        st.write("Colunas disponíveis:", list(ppp.columns))
+        return
+
+    options = [series_map[c] for c in series_cols]
+    default_sel = options[:]  # começa com todas
+
+    c1, c2 = st.columns([1, 1])
+    with c1:
+        select_all = st.button("Selecionar tudo", key="ppp_select_all")
+    with c2:
+        clear_all = st.button("Limpar seleção", key="ppp_clear_all")
+
+    # default seguro
+    default_sel = [x for x in default_sel if x in options]
+    if not default_sel and options:
+        default_sel = [options[0]]
+
+    if clear_all:
+        st.session_state["ppp_series"] = []
+        selected_labels = []
+    elif select_all:
+        st.session_state["ppp_series"] = options
+        selected_labels = options
     else:
-        fig_pib = build_pib_bar_figure(plot_df, dim_col=dim_col)
-        st.plotly_chart(fig_pib, width="stretch")
+        selected_labels = st.multiselect("Selecionar séries", options, default=default_sel, key="ppp_series")
 
-    st.divider()
+    inv_map = {v: k for k, v in series_map.items()}
+    selected_cols = [inv_map[l] for l in selected_labels if l in inv_map]
 
-    # =====================
-    # IBC (mensal)
-    # =====================
-    st.subheader("Índice de Atividade Econômica (IBC-Br)")
+    if not selected_cols:
+        st.warning("Nenhuma série selecionada.")
+        return
+
+    plot_long = wide_to_long(ppp, date_col="date", value_cols=selected_cols, name_map=series_map)
+    fig = px.line(
+        plot_long,
+        x="date",
+        y="value",
+        color="serie",
+        title="PIM / PMC / PMS — variação em 12 meses (%)",
+    )
+    fig.update_layout(xaxis_title="Data", yaxis_title="Variação (%)", legend_title_text="Série")
+    st.plotly_chart(fig, use_container_width=True)
+
+    with st.expander("Dados recentes (PIM/PMC/PMS — 12m)", expanded=False):
+        view_cols = ["date"] + selected_cols
+        st.dataframe(ppp[view_cols].dropna().tail(18), use_container_width=True)
+
+
+def tab_atividade_regional():
+    st.subheader("Atividade regional — IBC")
 
     if not IBC_PATH.exists():
         st.info(f"Arquivo mensal não encontrado: {IBC_PATH}")
@@ -301,147 +366,57 @@ def main() -> None:
     sgs_m = load_sgs_monthly(IBC_PATH)
 
     if "ibc_br" not in sgs_m.columns:
-        st.warning("A coluna 'ibc_br' não foi encontrada em sgs_mensal.parquet.")
+        st.warning("A coluna 'ibc_br' não foi encontrada em sgs_dados.parquet.")
+        st.write("Colunas disponíveis:", list(sgs_m.columns))
         return
 
     m = compute_ibc_metrics(sgs_m, col="ibc_br")
 
     c1, c2, c3, c4 = st.columns(4)
-
     with c1:
-        c1.metric(
-            "Variação mensal (m/m)",
-            f"{m['mom']:.2f}%" if m["mom"] is not None else "n/d",
-        )
-
+        st.metric("Variação mensal (m/m)", f"{m['mom']:.2f}%" if m["mom"] is not None else "n/d")
     with c2:
-        c2.metric(
-            "12 meses (soma / soma)",
-            f"{m['acc12']:.2f}%" if m["acc12"] is not None else "n/d",
-        )
-
+        st.metric("12 meses (soma/soma)", f"{m['acc12']:.2f}%" if m["acc12"] is not None else "n/d")
     with c3:
-        c3.metric(
-            "Acumulado no ano (YTD)",
-            f"{m['ytd']:.2f}%" if m["ytd"] is not None else "n/d",
-        )
-
+        st.metric("Acumulado no ano (YTD)", f"{m['ytd']:.2f}%" if m["ytd"] is not None else "n/d")
     with c4:
-        last_ref = m["last_date"].strftime("%Y-%m") if m.get("last_date") is not None else "n/d"
-        c4.metric("Última referência", last_ref)
+        st.metric("Última referência", m["last_date"].strftime("%Y-%m") if m.get("last_date") is not None else "n/d")
 
-    with st.expander("Dados mais recentes do IBC-Br", expanded=False):
-        st.dataframe(
-            sgs_m[["date", "ibc_br"]].dropna().sort_values("date").tail(24),
-            width="stretch",
-        )
-
-    fig_ibc = build_line_figure(
+    fig = build_line_figure(
         sgs_m,
         col="ibc_br",
         title="IBC-Br — índice (sem ajuste sazonal)",
         y_label="Índice",
     )
-    st.plotly_chart(fig_ibc, width="stretch")
+    st.plotly_chart(fig, use_container_width=True)
 
-
-    # =====================
-    # Indústria, comércio e serviços
-    # =====================
-
-    st.divider()
-    st.header("Indústria, comércio e serviços")
-
-    if not PPP_PATH.exists():
-        st.info(f"Arquivo não encontrado: {PPP_PATH}")
-    else:
-        ppp = load_indus_comer_serv(PPP_PATH)
-
-        # --- métricas: último valor observado ---
-        st.subheader("Indicadores (% 12 meses)")
-        render_last_value_metrics(
-            ppp,
-            cols=[
-                ("pim_12m", "Produção Industrial mensal (% PIM 12 meses)"),
-                ("pmc_12m", "Pesquisa Mensal de Comércio (% PMC 12 meses)"),
-                ("pms_12m", "Pesquisa Mensal de Serviços (% PMS 12 meses)"),
-            ],
+    with st.expander("Dados mais recentes do IBC-Br", expanded=False):
+        st.dataframe(
+            sgs_m[["date", "ibc_br"]].dropna().sort_values("date").tail(24),
+            use_container_width=True,
         )
 
-        series_map = {
-            "pim_12m": "Produção Industrial mensal (% PIM 12 meses)",
-            "pmc_12m": "Pesquisa Mensal de Comércio (% PMC 12 meses)",
-            "pms_12m": "Pesquisa Mensal de Serviços (% PMS 12 meses)",
-        }
-        series_cols = list(series_map.keys())
-        options = [series_map[c] for c in series_cols]
-
-        # default: começa com as 3 (sem espaços extras!)
-        default_sel = [
-            "Produção Industrial mensal (% PIM 12 meses)",
-            "Pesquisa Mensal de Comércio (% PMC 12 meses)",
-            "Pesquisa Mensal de Serviços (% PMS 12 meses)",
-        ]
-        # garante que default só tenha itens que existem em options
-        default_sel = [x for x in default_sel if x in options]
-
-        col1, col2 = st.columns([1, 1])
-        with col1:
-            select_all = st.button("Selecionar tudo", key="ppp_select_all")
-        with col2:
-            clear_all = st.button("Limpar seleção", key="ppp_clear_all")
-
-        if select_all:
-            selected_labels = options
-        elif clear_all:
-            selected_labels = []
-        else:
-            selected_labels = st.multiselect(
-                "Selecionar séries",
-                options,
-                default=default_sel,
-                key="ppp_series",
-            )
-
-        # mapeia labels escolhidos de volta para colunas
-        inv_map = {v: k for k, v in series_map.items()}
-        selected_cols = [inv_map[l] for l in selected_labels if l in inv_map]
-
-        if not selected_cols:
-            st.warning("Nenhuma série selecionada. Selecione ao menos uma série para exibir o gráfico.")
-        else:
-            # --- gráfico único (long) ---
-            plot_long = wide_to_long(
-                df=ppp,
-                date_col="date",
-                value_cols=selected_cols,
-                name_map=series_map,
-            )
-
-            fig_ppp = px.line(
-                plot_long,
-                x="date",
-                y="value",
-                color="serie",
-                title="Produção Industrial, comércio e serviços — variação em 12 meses (%)",
-            )
-            fig_ppp.update_layout(
-                xaxis_title="Data",
-                yaxis_title="Variação (%)",
-                legend_title_text="Série",
-            )
-
-            st.plotly_chart(fig_ppp, width="stretch", key="ppp_line")
-
-        with st.expander("Dados mais recentes (PIM/PMC/PMS — 12m)", expanded=False):
-            st.dataframe(
-                ppp[[ "date","pim_12m", "pmc_12m", "pms_12m"]].dropna().tail(12),
-                width="stretch",
-            )
+    # Placeholder para expansão com IBC_UF
+    if IBCUF_PATH.exists():
+        st.caption("IBC por UF encontrado (ibc_uf.parquet). Se quiser, montamos um mapa/linha por UF aqui.")
+    else:
+        st.caption("Se você quiser incluir IBC por UF nesta aba, gere/exporte ibc_uf.parquet e eu monto o bloco.")
 
 
-# Execução
-main()
+# ============================================================
+# APP
+# ============================================================
+tabs = st.tabs(["PIB", "Dinâmicas", "Atividade regional"])
+
+with tabs[0]:
+    tab_pib()
+
+with tabs[1]:
+    tab_dinamicas()
+
+with tabs[2]:
+    tab_atividade_regional()
+
 
 
 

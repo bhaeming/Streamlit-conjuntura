@@ -8,14 +8,28 @@ import statsmodels.formula.api as smf
 from functools import reduce
 from pathlib import Path   
 from building_features import tidy_sidra_monthly_single
+from building_features import ensure_month_end_index
+from building_features import acc_12m_curve_rate
+from building_features import add_12m_from_monthly_rates
+from building_features import tidy_sidra_setores
+from building_features import sidra_quarter_code_to_date
+from building_features import tidy_sidra_ipp
+from building_features import tidy_ipca_grupos
+
+
 
 ###################################################################
 ### Dados SGS ###
+###################################################################
 
-## Selic
+# -----------------------------
+# Coleta dados Selic
+# ----------------------------
+
 selic = sgs.get({'selic' : '432'},
                start = '2020-01-31')
 selic
+
 # Tratamento dos dados da selic para mensal
 selic_mensal = selic.resample('ME').last().reset_index()
 selic_mensal.rename(columns={"Date": "date"}, inplace=True)
@@ -28,54 +42,6 @@ out_dir.mkdir(parents=True, exist_ok=True)
 
 selic_mensal.to_parquet(out_dir / "selic_mensal.parquet", index=False)
 
-
-# --------------------------------------------------
-# IPCA - consolida todos os ipcas relevantes do SGS
-# --------------------------------------------------
-
-# Funções de tratamento e transformação #
-
-def ensure_month_end_index(df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Garante que o DataFrame tenha índice Datetime no fim do mês, ordenado.
-    Aceita:
-      - índice datetime
-      - ou coluna 'date'
-    """
-    out = df.copy()
-
-    if "date" in out.columns:
-        out["date"] = pd.to_datetime(out["date"], errors="coerce")
-        out = out.dropna(subset=["date"]).set_index("date")
-
-    # força fim do mês
-    out.index = pd.to_datetime(out.index, errors="coerce") + pd.offsets.MonthEnd(0)
-    out = out[~out.index.isna()].sort_index()
-
-    return out
-
-
-def acc_12m_curve_rate(s: pd.Series) -> pd.Series:
-    """
-    Converte uma série mensal em % m/m para inflação acumulada em 12 meses (%),
-    via composição multiplicativa (rolling 12).
-    Retorna série alinhada ao índice original.
-    """
-    s = pd.to_numeric(s, errors="coerce")
-    return ((1 + s / 100).rolling(12).apply(np.prod, raw=True) - 1) * 100
-
-
-def add_12m_from_monthly_rates(df: pd.DataFrame, cols: list[str], suffix_12m: str = "_12m_calc") -> pd.DataFrame:
-    """
-    Para cada coluna em cols (mensal % m/m), cria uma coluna 12m composta.
-    """
-    out = df.copy()
-    for c in cols:
-        if c in out.columns:
-            out[f"{c}{suffix_12m}"] = acc_12m_curve_rate(out[c])
-    return out
-
-
 # -----------------------------
 # Coleta dados IPCA do SGS
 # -----------------------------
@@ -87,41 +53,37 @@ ipca_ld_m = sgs.get(
     start="2011-01-31",
 )
 
-# -----------------------------
-# Padroniza índices (fim do mês)
-# -----------------------------
+
+# Tratamento e padronização dos índices (fim do mês)
+
 ipca_mensal = ensure_month_end_index(ipca_mensal)
 ipca_12m    = ensure_month_end_index(ipca_12m)
 ipca_ld_m   = ensure_month_end_index(ipca_ld_m)
 
-# -----------------------------
+
 # Limpeza a alinhamento de datas
-# -----------------------------
+
 df_ipca_all = (
     ipca_mensal.join(ipca_12m, how="outer")
                .join(ipca_ld_m, how="outer")
                .sort_index()
 )
 
-# -----------------------------
-# Cria 12m calculado para as séries mensais (opcional para ipca)
-# - livres e administrados: essencial
-# - ipca: opcional (útil para auditoria vs ipca_12m oficial)
-# -----------------------------
+
+# Cria 12m calculado para as séries mensais
+
 df_ipca_all = add_12m_from_monthly_rates(
     df_ipca_all,
     cols=["ipca_livres", "ipca_administrados", "ipca"],  # pode tirar "ipca" se não quiser
     suffix_12m="_12m_calc"
 )
 
-# -----------------------------
+
 # Export dos dfs
-# -----------------------------
+
 df_ipca_all = df_ipca_all.dropna(how="all")
 
-# volta date pra coluna e exporta parquet
 df_ipca_all_out = df_ipca_all.reset_index().rename(columns={"index": "date"})
-
 df_ipca_all_out
 
 BASE_DIR = Path(__file__).resolve().parents[1]  # raiz do projeto
@@ -129,12 +91,63 @@ out_dir = BASE_DIR / "data" / "processed"
 out_dir.mkdir(parents=True, exist_ok=True)
 
 df_ipca_all_out.to_parquet(out_dir / "ipca_all.parquet", index=False)
-# -----------------------------
 
+
+#####################################################################################
+
+# -----------------------------
+# Coleta dados IBC-Br e crédito do SGS
+# ----------------------------
+##Brasil 
 ibc_br= sgs.get({'ibc_br' : '24363',
                  'ibc_br_dessaz': '24364'},
                start = '2014-03-31')
 ibc_br
+
+##ufs 
+ibc_uf = sgs.get(
+    {
+        "ibc_se": "25393",        
+        "ibc_se_dessaz": "25395",
+        "ibc_mg": "25379",
+        "ibc_mg_dessaz": "25380",
+        "ibc_rj": "25396",
+        "ibc_rj_dessaz": "25397",
+        "ibc_es": "25398",
+        "ibc_es_dessaz": "25399",
+        "ibc_sp": "25392",
+        "ibc_sp_dessaz": "25394",
+        "ibc_co": "25381",
+        "ibc_co_dessaz": "25382",
+        "ibc_go": "25383",
+        "ibc_go_dessaz": "25384",
+        "ibc_sul": "25400",
+        "ibc_sul_dessaz": "25403",        
+        "ibc_sc": "25402",
+        "ibc_sc_dessaz": "25405",
+        "ibc_pr": "25408",
+        "ibc_pr_dessaz": "25413",
+        "ibc_rs": "25401",
+        "ibc_rs_dessaz": "25404",       
+        "ibc_norte": "25406",
+        "ibc_norte_dessaz": "25407",        
+        "ibc_pa": "25409",
+        "ibc_pa_dessaz": "25410",
+        "ibc_am": "25411",
+        "ibc_am_dessaz": "25412",
+        "ibc_ne": "25388",
+        "ibc_ne_dessaz": "25389",
+        "ibc_ce": "25390",
+        "ibc_ce_dessaz": "25391",        
+        "ibc_ba": "25415",
+        "ibc_ba_dessaz": "25416",
+        "ibc_pe": "25417",
+        "ibc_pe_dessaz": "25418",
+    },
+    start="2014-01-31",
+)
+ibc_uf
+
 
 saldo_cred = sgs.get(
     {
@@ -146,7 +159,7 @@ saldo_cred = sgs.get(
 )
 saldo_cred
 
-## inadimplencia anual
+# inadimplencia anual
 inadimplencia =  sgs.get(
     {
         'inadimplencia_total' : '21085',
@@ -158,7 +171,7 @@ inadimplencia =  sgs.get(
 inadimplencia
 
 
-## taxa de juros anual
+# taxa de juros anual
 taxa_de_juros = sgs.get(
     {
         'taxa_juros_pf' : '20748',
@@ -198,11 +211,24 @@ out_dir.mkdir(parents=True, exist_ok=True)
 
 sgs_wide.to_parquet(out_dir / "sgs_dados.parquet", index=False)
 
-#####################################################################################
+#exportação IBC-UF
 
-#  --- Dados SIDRA ---
+BASE_DIR = Path(__file__).resolve().parents[1]  
+out_dir = BASE_DIR / "data" / "processed"
 
-## PIB por setores trimestral
+out_dir.mkdir(parents=True, exist_ok=True)
+ 
+ibc_uf.to_parquet(out_dir / "ibc_uf.parquet", index=False)
+
+
+
+###################################################################
+### Dados SIDRA ###
+###################################################################
+
+# ------------------------------------
+#PIB por setores trimestral
+# ------------------------------------
 
 pibs = sidra.get_table(
     table_code=5932,
@@ -218,53 +244,9 @@ pibs = sidra.get_table(
 
 pibs
 ##################################################################################
-
-# Funções de limpeza e transformação trimestrais SIDRA
-def sidra_quarter_code_to_date(s: pd.Series) -> pd.Series:
-    """
-    Converte código trimestral SIDRA (YYYYQQ) em datetime:
-    QQ=01..04 => último dia do trimestre.
-    Ex.: 199601 -> 1996-03-31
-    """
-    s = s.astype(str).str.strip()
-    year = s.str.slice(0, 4).astype(int)
-    q = s.str.slice(4, 6).astype(int)
-
-    # fim do trimestre: Q1=03-31, Q2=06-30, Q3=09-30, Q4=12-31
-    month = q.map({1: 3, 2: 6, 3: 9, 4: 12})
-    # dia final por mês (3,6,9,12)
-    day = month.map({3: 31, 6: 30, 9: 30, 12: 31})
-
-    return pd.to_datetime(
-        dict(year=year, month=month, day=day),
-        errors="coerce"
-    )
-
-def tidy_sidra_setores(df: pd.DataFrame) -> pd.DataFrame:
-    out = df.copy()
-
-    # valor numérico (SIDRA às vezes vem como string)
-    out["V"] = pd.to_numeric(out["V"], errors="coerce")
-
-    # data a partir de D2C (YYYYQQ)
-    out["date"] = sidra_quarter_code_to_date(out["D2C"])
-
-    # colunas-alvo
-    out = out.rename(columns={
-        "D4N": "setor",
-        "V": "value",
-    })[["date", "setor","value"]]
-
-    # limpeza básica
-    out = out.dropna(subset=["date", "setor", "value"]).sort_values(["setor", "date"]).reset_index(drop=True)
-
-    return out
-
 # uso:
 pib_long = tidy_sidra_setores(pibs)
-pib_long
-
-
+pib_long.describe()
 setores = pib_long["setor"].unique().tolist()
 setores
 
@@ -276,7 +258,10 @@ out_dir.mkdir(parents=True, exist_ok=True)
 
 pib_long.to_parquet(out_dir / "pibs_quarterly.parquet", index=False)
 
-## IPCA detalhado
+
+# ------------------------------------
+# coleta IPCA detalhado (grupos e pesos)
+# ------------------------------------
 
 IPCA_TABLE = "7060"
 
@@ -317,52 +302,6 @@ def fetch_ipca_grupos(period: str = "all") -> pd.DataFrame:
 
 #Tratamento ipca detalhado
 
-def tidy_ipca_grupos(df_raw: pd.DataFrame) -> pd.DataFrame:
-    df = df_raw.copy()
-
-    rename_map = {
-        "D2C": "periodo",   # YYYYMM
-        "D3N": "variavel",
-        "D4N": "grupo",
-        "V": "value",
-    }
-
-    for k, v in rename_map.items():
-        if k in df.columns:
-            df = df.rename(columns={k: v})
-
-    # valor numérico
-    df["value"] = pd.to_numeric(df["value"], errors="coerce")
-
-    # data: YYYYMM -> fim do mês
-    df["date"] = (
-        pd.to_datetime(df["periodo"].astype(str), format="%Y%m", errors="coerce")
-        + pd.offsets.MonthEnd(0)
-    )
-
-    # normaliza nomes das variáveis
-    df["indicador"] = df["variavel"].replace(VAR_LABELS)
-
-    # limpa nome dos grupos (remove "1. ")
-    df["grupo"] = (
-        df["grupo"]
-        .astype(str)
-        .str.replace(r"^\d+\.\s*", "", regex=True)
-        .str.strip()
-    )
-
-    out = (
-        df[["date", "grupo", "indicador", "value"]]
-        .dropna(subset=["date", "grupo", "indicador", "value"])
-        .sort_values(["grupo", "indicador", "date"])
-        .reset_index(drop=True)
-    )
-
-    return out
-
-
-
-
 # coleta
 raw_ipca = fetch_ipca_grupos(period="all")
 
@@ -388,47 +327,6 @@ ipca_grupos.to_parquet(out_dir / "ipca_grupos.parquet", index=False)
 
 
 
-def tidy_ipca_grupos(df_raw: pd.DataFrame) -> pd.DataFrame:
-    """
-    Retorna dataframe long com:
-      date (datetime, fim do mês),
-      grupo (str),
-      indicador (variacao_mensal | variacao_12m | peso_mensal),
-      value (float)
-    """
-    df = df_raw.copy()
-
-    # padrão sidrapy quando header='n': colunas como D2C, D2N, D4N e V
-    # - D2C: período (YYYYMM)
-    # - D4N: nome do grupo (geral/grupo/subgrupo/etc.)
-    # - D3N: variável (nome)
-    # - V  : valor
-    rename_map = {
-        "D2C": "periodo",
-        "D3N": "variavel",
-        "D4N": "grupo",
-        "V": "value",
-    }
-    for k, v in rename_map.items():
-        if k in df.columns:
-            df = df.rename(columns={k: v})
-
-    # remove linhas estranhas
-    df["value"] = pd.to_numeric(df["value"], errors="coerce")
-
-    # data: YYYYMM -> último dia do mês
-    df["date"] = pd.to_datetime(df["periodo"].astype(str), format="%Y%m", errors="coerce") + pd.offsets.MonthEnd(0)
-
-    # normaliza nomes de variável
-    df["indicador"] = df["variavel"].replace(VAR_LABELS)
-
-    # limpeza do nome do grupo (remove "1." etc.)
-    df["grupo"] = df["grupo"].astype(str).str.replace(r"^\d+\.\s*", "", regex=True).str.strip()
-
-    out = df[["date", "grupo", "indicador", "value"]].dropna(subset=["date", "grupo", "indicador", "value"])
-    out = out.sort_values(["grupo", "indicador", "date"]).reset_index(drop=True)
-
-    return out
 
 # Coleta de dados IPCA detalhados
 
@@ -456,9 +354,9 @@ ipca_grupos.to_parquet(
 ipca_grupos.head()
 
 
-#---------------------------
-
+#------------------------------------
 # Indice de preços ao produtor - IPP
+#------------------------------------
 
 ipp = sidra.get_table(
     table_code= 6904,
@@ -473,30 +371,9 @@ ipp = sidra.get_table(
 )
 
 ipp.head()
-
-def tidy_sidra_ipp(df: pd.DataFrame) -> pd.DataFrame:
-    out = ipp.copy()
-
-    # valor numérico (SIDRA às vezes vem como string)
-    out["V"] = pd.to_numeric(out["V"], errors="coerce")
-
-    # data a partir de D1C (YYYYMM)
-    out["date"] = pd.to_datetime(out["D2C"].astype(str), format="%Y%m", errors="coerce") + pd.offsets.MonthEnd(0)
-
-    # colunas-alvo
-    out = out.rename(columns={
-        "D4N": "setor_ipp",
-        "V": "value",
-    })[["date", "setor_ipp","value"]]
-
-    # limpeza básica
-    out = out.dropna(subset=["date", "setor_ipp", "value"]).sort_values(["setor_ipp", "date"]).reset_index(drop=True)
-
-    return out
-
+# Tratamento IPP
 ipp_long = tidy_sidra_ipp(ipp)
 ipp_long
-
 
 #conferência
 ipp_long["setor_ipp"].unique().tolist()
@@ -510,9 +387,11 @@ out_dir.mkdir(parents=True, exist_ok=True)
 
 ipp_long.to_parquet(out_dir / "ipp_m.parquet", index=False)
 
-#---------------------------
+
+
+#---------------------------------------------------------------------
 #   DADOS MENSAIS DA INDÚSTRIA, COMÉRCIO E SERVIÇOS - PMC, PMS e PIM
-#---------------------------
+#---------------------------------------------------------------------
 #PIM
 
 
@@ -530,7 +409,7 @@ pim_raw = sidra.get_table(
 pim_raw
 #PMS - Pesquisa Mensal de Serviços
 
-## PMS em nível
+## PMS em nível (acumulado 12 meses)
 pms_raw_12 = sidra.get_table(
     table_code= 5906,
     territorial_level='1',
@@ -543,7 +422,7 @@ pms_raw_12 = sidra.get_table(
 pms_raw_12
 
 ## PMS Dessazonalizada
-### PSM em nível
+### PMS em nível
 pms_raw_2 = sidra.get_table(
     table_code= 5906,
     territorial_level='1',
@@ -601,7 +480,8 @@ pmc_raw
 df_ind_com_ser = [
     pim_long,
     pms_long,
-    pmc_long]
+    pmc_long
+    ]
 
 df_ind_com_ser
 
@@ -621,7 +501,7 @@ out_dir.mkdir(parents=True, exist_ok=True)
 
 df_ind_com_ser_final.to_parquet(out_dir / "indust_comer_serv.parquet", index=False)
 
-
+#! Parei aqui
 # ---------------------------------------------------------
 # Dados Sócioeconômicos - SIDRA
 # ---------------------------------------------------------

@@ -4,6 +4,12 @@ from bcb import sgs
 import sidrapy as sidra
 from sidrapy import get_table
 
+VAR_LABELS = {
+    "IPCA - Variação mensal": "variacao_mensal",
+    "IPCA - Variação acumulada em 12 meses": "variacao_12m",
+    "IPCA - Peso mensal": "peso_mensal",
+}
+
 
 
 ###################################################################
@@ -129,6 +135,10 @@ def tidy_sidra_setores(df: pd.DataFrame) -> pd.DataFrame:
         "D4N": "setor",
         "V": "value",
     })[["date", "setor","value"]]
+
+    out = out.dropna(subset=["date", "setor", "value"]).sort_values(["setor", "date"]).reset_index(drop=True)
+
+    return out
 
 #Tratamento IPP
 def tidy_sidra_ipp(df: pd.DataFrame) -> pd.DataFrame:

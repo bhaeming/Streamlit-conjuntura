@@ -79,13 +79,27 @@ def load_ipp_long(path: Path) -> pd.DataFrame:
 def load_ipca_grupos_long(path: Path) -> pd.DataFrame:
     """
     Esperado: colunas ['date','grupo','indicador','value'].
+    Indicadores observados: ['peso_mensal', 'variacao_12m', 'variacao_mensal'] (segundo você).
     """
     df = pd.read_parquet(path).copy()
     df = _ensure_date_column(df)
 
     df["value"] = pd.to_numeric(df["value"], errors="coerce")
+    df["grupo"] = df["grupo"].astype(str).str.strip()
+    df["indicador"] = df["indicador"].astype(str).str.strip()
+
     df = df.dropna(subset=["date", "grupo", "indicador", "value"]).sort_values(["date", "grupo"])
     return df
+
+
+def wide_to_long(df: pd.DataFrame, cols: list[str], name_map: dict[str, str]) -> pd.DataFrame:
+    keep = ["date"] + [c for c in cols if c in df.columns]
+    out = df[keep].copy()
+    out = out.melt(id_vars=["date"], var_name="serie", value_name="value")
+    out["serie"] = out["serie"].map(name_map).fillna(out["serie"])
+    out["value"] = pd.to_numeric(out["value"], errors="coerce")
+    out = out.dropna(subset=["date", "value"]).sort_values("date")
+    return out
 
 
 def last_value(df: pd.DataFrame, col: str) -> tuple[pd.Timestamp | None, float | None]:
@@ -105,14 +119,14 @@ def metric_last(df: pd.DataFrame, label: str, col: str, fmt: str = "{:.2f}%") ->
         st.metric(label, fmt.format(v))
 
 
-def wide_to_long(df: pd.DataFrame, cols: list[str], name_map: dict[str, str]) -> pd.DataFrame:
-    keep = ["date"] + [c for c in cols if c in df.columns]
-    out = df[keep].copy()
-    out = out.melt(id_vars=["date"], var_name="serie", value_name="value")
-    out["serie"] = out["serie"].map(name_map).fillna(out["serie"])
-    out["value"] = pd.to_numeric(out["value"], errors="coerce")
-    out = out.dropna(subset=["date", "value"]).sort_values("date")
-    return out
+def safe_multiselect(label: str, options: list[str], default: list[str], key: str) -> list[str]:
+    """
+    Garante que defaults existam em options (evita StreamlitAPIException).
+    """
+    default = [d for d in default if d in options]
+    if not default and options:
+        default = [options[0]]
+    return st.multiselect(label, options, default=default, key=key)
 
 
 def last_value_for_sector(ipp: pd.DataFrame, setor: str) -> tuple[pd.Timestamp | None, float | None]:
@@ -130,32 +144,66 @@ def ipca_contribuicoes(df_ipca_grupos: pd.DataFrame) -> pd.DataFrame:
     """
     var_m = (
         df_ipca_grupos[df_ipca_grupos["indicador"] == "variacao_mensal"]
-        .rename(columns={"value": "variacao_mensal"})
-        [["date", "grupo", "variacao_mensal"]]
+        .rename(columns={"value": "variacao_mensal"})[["date", "grupo", "variacao_mensal"]]
     )
     peso_m = (
         df_ipca_grupos[df_ipca_grupos["indicador"] == "peso_mensal"]
-        .rename(columns={"value": "peso_mensal"})
-        [["date", "grupo", "peso_mensal"]]
+        .rename(columns={"value": "peso_mensal"})[["date", "grupo", "peso_mensal"]]
     )
+
     out = var_m.merge(peso_m, on=["date", "grupo"], how="inner")
     out["contrib_pp"] = out["variacao_mensal"] * out["peso_mensal"] / 100.0
     return out
 
 
-def safe_multiselect(
-    label: str,
-    options: list[str],
-    default: list[str],
-    key: str,
-) -> list[str]:
+def groups_selector_ui(grupos_all: list[str], key_prefix: str, default_n: int = 8) -> list[str]:
     """
-    Garante que defaults existam em options (evita StreamlitAPIException).
+    UI padrão: selecionar tudo / limpar / multiselect
     """
-    default = [d for d in default if d in options]
-    if not default and options:
-        default = [options[0]]
-    return st.multiselect(label, options, default=default, key=key)
+    col1, col2 = st.columns([1, 1])
+    with col1:
+        sel_all = st.button("Selecionar tudo", key=f"{key_prefix}_all")
+    with col2:
+        clr_all = st.button("Limpar", key=f"{key_prefix}_clear")
+
+    default = grupos_all[:default_n] if len(grupos_all) > default_n else grupos_all
+
+    if clr_all:
+        st.session_state[f"{key_prefix}_ms"] = []
+        return []
+    if sel_all:
+        st.session_state[f"{key_prefix}_ms"] = grupos_all
+        return grupos_all
+
+    return st.multiselect(
+        "Selecionar grupos",
+        grupos_all,
+        default=default,
+        key=f"{key_prefix}_ms",
+    )
+
+
+def wide_ipca_grupos(df_long: pd.DataFrame, indicador: str) -> pd.DataFrame:
+    """
+    Converte df long (date, grupo, indicador, value) para wide:
+    index=date, columns=grupo, values=value para um indicador específico.
+    """
+    tmp = df_long[df_long["indicador"] == indicador].copy()
+    if tmp.empty:
+        return pd.DataFrame()
+
+    wide = (
+        tmp.pivot_table(index="date", columns="grupo", values="value", aggfunc="last")
+        .sort_index()
+        .reset_index()
+    )
+    return wide
+
+
+def last_ref_label(d: pd.Timestamp | None) -> str:
+    if d is None or pd.isna(d):
+        return "n/d"
+    return pd.Timestamp(d).strftime("%Y-%m")
 
 
 # ============================================================
@@ -196,7 +244,7 @@ with tabs[0]:
             metric_last(ipca_agg, "IPCA (12m)", "ipca_12m", fmt="{:.2f}%")
         with c3:
             d_last, _ = last_value(ipca_agg, "ipca_12m")
-            st.metric("Última referência", d_last.strftime("%Y-%m") if d_last is not None else "n/d")
+            st.metric("Última referência", last_ref_label(d_last))
         with c4:
             metric_last(ipca_agg, "IPCA livres (12m)", "ipca_livres_12m_calc", fmt="{:.2f}%")
         with c5:
@@ -263,69 +311,138 @@ with tabs[1]:
 
     ipca_g = load_ipca_grupos_long(IPCA_GRUPOS_PATH)
 
-    # ============================================================
-    # 2.1) NOVO — gráfico em LINHAS: variação mensal por grupo
-    # ============================================================
-    st.markdown("#### Variação mensal do IPCA por grupo (%)")
-
-    df_var = ipca_g[ipca_g["indicador"] == "variacao_mensal"].copy()
-    if df_var.empty:
-        st.warning("Não encontrei indicador 'variacao_mensal' no ipca_grupos.parquet.")
+    # ===========================
+    # (CORRIGIDO) Linha 12m por grupo (fica SOMENTE nesta aba)
+    # + layout 2 colunas (gráfico | tabela)
+    # ===========================
+    indicadores_disponiveis = set(ipca_g["indicador"].dropna().unique().tolist())
+    if "variacao_12m" not in indicadores_disponiveis:
+        st.warning("Não encontrei 'variacao_12m' no ipca_grupos.parquet.")
     else:
-        grupos_all = sorted(df_var["grupo"].dropna().unique().tolist())
+        # referência mais recente (pelo arquivo long)
+        last_date = ipca_g["date"].max()
+        last_ref = last_ref_label(last_date)
 
-        colA, colB = st.columns([1, 1])
-        with colA:
-            select_all_g = st.button("Selecionar tudo", key="ipca_grp_line_all")
-        with colB:
-            clear_all_g = st.button("Limpar", key="ipca_grp_line_none")
+        st.markdown(f"### IPCA por grupo — variação em 12 meses (%) | referência {last_ref}")
 
-        # default: alguns grupos comuns, se existirem
-        default_candidates = [
-            "Alimentação e bebidas",
-            "Habitação",
-            "Transportes",
-            "Saúde e cuidados pessoais",
-            "Educação",
-        ]
-        default_sel = [g for g in default_candidates if g in grupos_all]
-        if not default_sel and grupos_all:
-            default_sel = grupos_all[:6]
+        # wide 12m p/ gráfico
+        ipca12_wide = wide_ipca_grupos(ipca_g, "variacao_12m")
 
-        if clear_all_g:
-            st.session_state["ipca_grp_line_ms"] = []
-            grupos_sel = []
-        elif select_all_g:
-            st.session_state["ipca_grp_line_ms"] = grupos_all
-            grupos_sel = grupos_all
+        if ipca12_wide.empty:
+            st.warning("Sem dados de variacao_12m por grupo.")
         else:
-            grupos_sel = safe_multiselect(
-                "Selecionar grupos (linhas)",
-                grupos_all,
-                default_sel,
-                key="ipca_grp_line_ms",
-            )
+            grupos_all = sorted([c for c in ipca12_wide.columns if c != "date"])
+            grupos_sel = groups_selector_ui(grupos_all, key_prefix="ipca12_grupos", default_n=10)
 
-        if not grupos_sel:
-            st.info("Selecione ao menos um grupo para exibir as linhas.")
-        else:
-            df_plot = df_var[df_var["grupo"].isin(grupos_sel)].copy()
-            fig_line = px.line(
-                df_plot.sort_values("date"),
-                x="date",
-                y="value",
-                color="grupo",
-                title="IPCA por grupo — variação mensal (%)",
-            )
-            fig_line.update_layout(xaxis_title="Data", yaxis_title="Variação mensal (%)", legend_title_text="Grupo")
-            st.plotly_chart(fig_line, use_container_width=True)
+            col_left, col_right = st.columns([2, 1])
+
+            # ---- COLUNA ESQUERDA: gráfico 12m
+            with col_left:
+                if not grupos_sel:
+                    st.warning("Selecione ao menos um grupo para exibir a curva em 12 meses.")
+                else:
+                    plot_long_12m = ipca12_wide[["date"] + grupos_sel].melt(
+                        id_vars=["date"],
+                        var_name="grupo",
+                        value_name="value",
+                    )
+                    plot_long_12m["value"] = pd.to_numeric(plot_long_12m["value"], errors="coerce")
+                    plot_long_12m = plot_long_12m.dropna(subset=["date", "value"]).sort_values("date")
+
+                    fig_12m = px.line(
+                        plot_long_12m,
+                        x="date",
+                        y="value",
+                        color="grupo",
+                        title=f"Variação em 12 meses — por grupo (ref. {last_ref})",
+                    )
+                    fig_12m.update_layout(
+                        xaxis_title="Data",
+                        yaxis_title="Variação (%)",
+                        legend_title_text="Grupo",
+                    )
+                    st.plotly_chart(fig_12m, use_container_width=True)
+
+# ---- COLUNA DIREITA: tabela (grupo | peso | var mensal | var 12m | contribuição)
+            with col_right:
+                st.markdown(
+                    f"**Tabela — pesos, variação e contribuição do IPCA (ref. {last_ref})**"
+                )
+
+                # dados do último mês
+                last_month = ipca_g[ipca_g["date"] == last_date].copy()
+
+                peso_last = (
+                    last_month[last_month["indicador"] == "peso_mensal"][["grupo", "value"]]
+                    .rename(columns={"value": "peso_mensal"})
+                )
+                vm_last = (
+                    last_month[last_month["indicador"] == "variacao_mensal"][["grupo", "value"]]
+                    .rename(columns={"value": "variacao_mensal"})
+                )
+                v12_last = (
+                    last_month[last_month["indicador"] == "variacao_12m"][["grupo", "value"]]
+                    .rename(columns={"value": "variacao_12m"})
+                )
+
+                # merge geral
+                table = (
+                    peso_last.merge(vm_last, on="grupo", how="outer")
+                            .merge(v12_last, on="grupo", how="outer")
+                )
+
+                # filtra grupos selecionados (se houver)
+                if grupos_sel:
+                    table = table[table["grupo"].isin(grupos_sel)].copy()
+
+                # garantir numéricos
+                for c in ["peso_mensal", "variacao_mensal", "variacao_12m"]:
+                    table[c] = pd.to_numeric(table[c], errors="coerce")
+
+                # contribuição mensal em p.p.
+                table["contrib_pp"] = table["peso_mensal"] * table["variacao_mensal"] / 100.0
+
+                # rank por contribuição (maior impacto primeiro)
+                table = table.sort_values("contrib_pp", ascending=False, na_position="last")
+                table["Rank"] = range(1, len(table) + 1)
+
+                # seleção e renomeação final
+                table_view = table[
+                    ["Rank", "grupo", "peso_mensal", "variacao_mensal", "variacao_12m", "contrib_pp"]
+                ].rename(
+                    columns={
+                        "grupo": "Grupo",
+                        "peso_mensal": "Peso (%)",
+                        "variacao_mensal": "Variação mensal (%)",
+                        "variacao_12m": "Variação 12m (%)",
+                        "contrib_pp": "Contribuição (p.p.)",
+                    }
+                )
+
+                # formatação visual
+                table_view["Peso (%)"] = table_view["Peso (%)"].map(lambda x: f"{x:.2f}" if pd.notna(x) else "—")
+                table_view["Variação mensal (%)"] = table_view["Variação mensal (%)"].map(
+                    lambda x: f"{x:+.2f}" if pd.notna(x) else "—"
+                )
+                table_view["Variação 12m (%)"] = table_view["Variação 12m (%)"].map(
+                    lambda x: f"{x:+.2f}" if pd.notna(x) else "—"
+                )
+                table_view["Contribuição (p.p.)"] = table_view["Contribuição (p.p.)"].map(
+                    lambda x: f"{x:+.3f}" if pd.notna(x) else "—"
+                )
+
+                st.dataframe(table_view, use_container_width=True, hide_index=True)
+
+
+                with st.expander("Dados (variação 12m por grupo)", expanded=False):
+                    st.dataframe(ipca12_wide.tail(24), use_container_width=True)
 
     st.divider()
 
     # ============================================================
-    # 2.2) Contribuições (barras empilhadas) + linha do índice geral
+    # 2.2) Contribuições (barras empilhadas) + linha do índice geral (mensal)
     # ============================================================
-    st.markdown("#### Contribuições do IPCA mensal por grupo (p.p.)")
+    st.markdown("### Contribuições do IPCA mensal por grupo (p.p.)")
 
     contrib = ipca_contribuicoes(ipca_g)
     contrib["ref"] = contrib["date"].dt.to_period("M").astype(str)
@@ -350,46 +467,45 @@ with tabs[1]:
         st.warning("Sem dados no período selecionado.")
         st.stop()
 
-    # remove agregados tipo índice geral
     mask_geral = contrib_f["grupo"].str.contains(r"índice geral|geral|índice\s+cheio", case=False, na=False)
     contrib_f = contrib_f[~mask_geral].copy()
 
     with c_right:
         st.caption("Seleção de grupos (barras)")
-        grupos_all = sorted(contrib_f["grupo"].dropna().unique().tolist())
+        grupos_all_b = sorted(contrib_f["grupo"].dropna().unique().tolist())
 
         b1, b2 = st.columns(2)
         with b1:
-            sel_all = st.button("Selecionar tudo", key="ipca_grupos_all")
+            sel_all = st.button("Selecionar tudo", key="ipca_grupos_all_b")
         with b2:
-            clr_all = st.button("Limpar", key="ipca_grupos_none")
+            clr_all = st.button("Limpar", key="ipca_grupos_none_b")
 
         if sel_all:
-            grupos_sel = grupos_all
+            grupos_sel_b = grupos_all_b
         elif clr_all:
-            grupos_sel = []
+            grupos_sel_b = []
         else:
-            grupos_sel = safe_multiselect(
+            grupos_sel_b = safe_multiselect(
                 "Escolher grupos (empilhado)",
-                grupos_all,
-                default=grupos_all,
-                key="ipca_grupos_multiselect",
+                grupos_all_b,
+                default=grupos_all_b,
+                key="ipca_grupos_multiselect_b",
             )
 
         agrupar_outros = st.checkbox(
             "Agrupar não selecionados como 'Outros'",
             value=True,
-            key="ipca_agrupar_outros",
+            key="ipca_agrupar_outros_b",
         )
 
-    if not grupos_sel:
+    if not grupos_sel_b:
         st.warning("Nenhum grupo selecionado.")
         st.stop()
 
     if agrupar_outros:
-        contrib_f["grupo_plot"] = contrib_f["grupo"].where(contrib_f["grupo"].isin(grupos_sel), "Outros")
+        contrib_f["grupo_plot"] = contrib_f["grupo"].where(contrib_f["grupo"].isin(grupos_sel_b), "Outros")
     else:
-        contrib_f = contrib_f[contrib_f["grupo"].isin(grupos_sel)].copy()
+        contrib_f = contrib_f[contrib_f["grupo"].isin(grupos_sel_b)].copy()
         contrib_f["grupo_plot"] = contrib_f["grupo"]
 
     plot_stack = (
@@ -410,7 +526,6 @@ with tabs[1]:
     line_df = total_pp[["date", "ref", "ipca_calc"]].copy()
     line_df["indice_geral"] = line_df["ipca_calc"]
 
-    # se existir ipca mensal no ipca_all, usa como linha principal
     if ipca_agg is not None and "ipca" in ipca_agg.columns:
         tmp = ipca_agg[["date", "ipca"]].dropna().copy()
         tmp["ref"] = tmp["date"].dt.to_period("M").astype(str)
@@ -418,47 +533,19 @@ with tabs[1]:
         line_df = line_df.merge(ipca_headline, on="ref", how="left")
         line_df["indice_geral"] = line_df["ipca"].combine_first(line_df["ipca_calc"])
 
-    last_ref = total_pp["ref"].iloc[-1]
-    last_calc = float(total_pp.loc[total_pp["ref"] == last_ref, "ipca_calc"].iloc[0])
-
-    m1, m2 = st.columns([1, 1])
-    with m1:
-        st.metric("Última referência", last_ref)
-    with m2:
-        st.metric("Somatório das contribuições (p.p.)", f"{last_calc:.2f}%")
-
-    # highlights
-    last_month = contrib_f[contrib_f["ref"] == last_ref].copy()
-    if not last_month.empty:
-        rank = (
-            last_month.groupby("grupo_plot", as_index=False)["contrib_pp"]
-            .sum()
-            .sort_values("contrib_pp")
-        )
-        worst = rank.head(1)
-        best = rank.tail(1)
-
-        h1, h2 = st.columns([1, 1])
-        with h1:
-            st.caption("Maior pressão altista (no mês)")
-            st.write(f"**{best['grupo_plot'].iloc[0]}**: {float(best['contrib_pp'].iloc[0]):+.2f} p.p.")
-        with h2:
-            st.caption("Maior alívio (no mês)")
-            st.write(f"**{worst['grupo_plot'].iloc[0]}**: {float(worst['contrib_pp'].iloc[0]):+.2f} p.p.")
-
     fig_combo = px.bar(
         plot_stack,
         x="date",
         y="contrib_pp",
         color="grupo_plot",
-        title="IPCA mensal — contribuições por grupo (p.p.) + índice geral",
+        title="IPCA mensal — contribuições por grupo (p.p.) + índice geral (mensal)",
     )
 
     fig_combo.add_scatter(
         x=line_df["date"],
         y=line_df["indice_geral"],
         mode="lines+markers",
-        name="Índice geral",
+        name="Índice geral (mensal)",
         yaxis="y2",
     )
 

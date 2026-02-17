@@ -396,12 +396,7 @@ def tab_atividade_regional():
             use_container_width=True,
         )
 
-    # Placeholder para expansão com IBC_UF
-    if IBCUF_PATH.exists():
-        st.caption("IBC por UF encontrado (ibc_uf.parquet). Se quiser, montamos um mapa/linha por UF aqui.")
-    else:
-        st.caption("Se você quiser incluir IBC por UF nesta aba, gere/exporte ibc_uf.parquet e eu monto o bloco.")
-
+    
 
 # ============================================================
 # APP

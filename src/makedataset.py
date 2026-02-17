@@ -123,8 +123,8 @@ ibc_uf = sgs.get(
         "ibc_go_dessaz": "25384",
         "ibc_sul": "25400",
         "ibc_sul_dessaz": "25403",        
-        "ibc_sc": "25402",
-        "ibc_sc_dessaz": "25405",
+            "ibc_sc": "25402",
+            "ibc_sc_dessaz": "25405",
         "ibc_pr": "25408",
         "ibc_pr_dessaz": "25413",
         "ibc_rs": "25401",
@@ -192,7 +192,7 @@ df_sgs = [
 df_sgs
 
 sgs_wide = reduce(
-    lambda left, right: pd.merge(left, right, on="Date", how="outer"),
+    lambda left, right: left.join(right, how="outer"),
     df_sgs
 )
 
@@ -312,6 +312,8 @@ ipca_grupos = tidy_ipca_grupos(raw_ipca)
 print(ipca_grupos.head(10))
 print(ipca_grupos.tail(10))
 print(ipca_grupos["indicador"].value_counts())
+print(ipca_grupos["indicador"].unique())
+
 print(ipca_grupos["grupo"].unique())
 
 
@@ -457,7 +459,14 @@ pm2_long = pms12_long.merge(pm22_long, on="date").merge(pm23_long, on="date")
 pm2_long
 
 
-#pms_long
+pim_long = tidy_sidra_monthly_single(pim_raw, value_name="pim")
+pms_long = pm2_long.rename(
+    columns={
+        "pms_raw_12": "pms_12m",
+        "pms_raw_2": "pms_nivel",
+        "pms_raw_3": "pms_dessaz",
+    }
+)
 
 
 #PMC
@@ -472,6 +481,7 @@ pmc_raw = sidra.get_table(
 )
 pmc_raw
 
+pmc_long = tidy_sidra_monthly_single(pmc_raw, value_name="pmc")
 
 
 

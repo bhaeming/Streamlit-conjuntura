@@ -17,208 +17,224 @@ from building_features import tidy_sidra_ipp
 from building_features import tidy_ipca_grupos
 
 
+def make_sgs():
+    ###################################################################
+    ### Dados SGS ###
+    ###################################################################
 
-###################################################################
-### Dados SGS ###
-###################################################################
+    # -----------------------------
+    # Coleta dados Selic
+    # ----------------------------
+    selic = sgs.get({'selic' : '432'},
+                start = '2020-01-31')
+    selic
 
-# -----------------------------
-# Coleta dados Selic
-# ----------------------------
+    # Tratamento dos dados da selic para mensal
+    selic_mensal = selic.resample('ME').last().reset_index()
+    selic_mensal.rename(columns={"Date": "date"}, inplace=True)
+    selic_mensal
+    #Exportando os dados processados
+    BASE_DIR = Path(__file__).resolve().parents[1]  # raiz do projeto
+    out_dir = BASE_DIR / "data" / "processed"
 
-selic = sgs.get({'selic' : '432'},
-               start = '2020-01-31')
-selic
+    out_dir.mkdir(parents=True, exist_ok=True)
 
-# Tratamento dos dados da selic para mensal
-selic_mensal = selic.resample('ME').last().reset_index()
-selic_mensal.rename(columns={"Date": "date"}, inplace=True)
-selic_mensal
-#Exportando os dados processados
-BASE_DIR = Path(__file__).resolve().parents[1]  # raiz do projeto
-out_dir = BASE_DIR / "data" / "processed"
+    selic_mensal.to_parquet(out_dir / "selic_mensal.parquet", index=False)
 
-out_dir.mkdir(parents=True, exist_ok=True)
+    # -----------------------------
+    # Coleta dados IPCA do SGS
+    # -----------------------------
+    ipca_mensal = sgs.get({"ipca": "433"}, start="2014-01-31")
+    ipca_12m    = sgs.get({"ipca_12m": "13522"}, start="2014-01-31")
 
-selic_mensal.to_parquet(out_dir / "selic_mensal.parquet", index=False)
-
-# -----------------------------
-# Coleta dados IPCA do SGS
-# -----------------------------
-ipca_mensal = sgs.get({"ipca": "433"}, start="2014-01-31")
-ipca_12m    = sgs.get({"ipca_12m": "13522"}, start="2014-01-31")
-
-ipca_ld_m = sgs.get(
-    {"ipca_livres": "11428", "ipca_administrados": "4449"},
-    start="2011-01-31",
-)
-
-
-# Tratamento e padronização dos índices (fim do mês)
-
-ipca_mensal = ensure_month_end_index(ipca_mensal)
-ipca_12m    = ensure_month_end_index(ipca_12m)
-ipca_ld_m   = ensure_month_end_index(ipca_ld_m)
+    ipca_ld_m = sgs.get(
+        {"ipca_livres": "11428", "ipca_administrados": "4449"},
+        start="2011-01-31",
+    )
 
 
-# Limpeza a alinhamento de datas
+    # Tratamento e padronização dos índices (fim do mês)
 
-df_ipca_all = (
-    ipca_mensal.join(ipca_12m, how="outer")
-               .join(ipca_ld_m, how="outer")
-               .sort_index()
-)
+    ipca_mensal = ensure_month_end_index(ipca_mensal)
+    ipca_12m    = ensure_month_end_index(ipca_12m)
+    ipca_ld_m   = ensure_month_end_index(ipca_ld_m)
 
 
-# Cria 12m calculado para as séries mensais
+    # Limpeza a alinhamento de datas
 
-df_ipca_all = add_12m_from_monthly_rates(
-    df_ipca_all,
-    cols=["ipca_livres", "ipca_administrados", "ipca"],  # pode tirar "ipca" se não quiser
-    suffix_12m="_12m_calc"
-)
-
-
-# Export dos dfs
-
-df_ipca_all = df_ipca_all.dropna(how="all")
-
-df_ipca_all_out = df_ipca_all.reset_index().rename(columns={"index": "date"})
-df_ipca_all_out
-
-BASE_DIR = Path(__file__).resolve().parents[1]  # raiz do projeto
-out_dir = BASE_DIR / "data" / "processed"
-out_dir.mkdir(parents=True, exist_ok=True)
-
-df_ipca_all_out.to_parquet(out_dir / "ipca_all.parquet", index=False)
+    df_ipca_all = (
+        ipca_mensal.join(ipca_12m, how="outer")
+                .join(ipca_ld_m, how="outer")
+                .sort_index()
+    )
 
 
-#####################################################################################
+    # Cria 12m calculado para as séries mensais
 
-# -----------------------------
-# Coleta dados IBC-Br e crédito do SGS
-# ----------------------------
-##Brasil 
-ibc_br= sgs.get({'ibc_br' : '24363',
-                 'ibc_br_dessaz': '24364'},
-               start = '2014-03-31')
-ibc_br
+    df_ipca_all = add_12m_from_monthly_rates(
+        df_ipca_all,
+        cols=["ipca_livres", "ipca_administrados", "ipca"],  # pode tirar "ipca" se não quiser
+        suffix_12m="_12m_calc"
+    )
 
-##ufs 
-ibc_uf = sgs.get(
-    {
-        "ibc_se": "25393",        
-        "ibc_se_dessaz": "25395",
-        "ibc_mg": "25379",
-        "ibc_mg_dessaz": "25380",
-        "ibc_rj": "25396",
-        "ibc_rj_dessaz": "25397",
-        "ibc_es": "25398",
-        "ibc_es_dessaz": "25399",
-        "ibc_sp": "25392",
-        "ibc_sp_dessaz": "25394",
-        "ibc_co": "25381",
-        "ibc_co_dessaz": "25382",
-        "ibc_go": "25383",
-        "ibc_go_dessaz": "25384",
-        "ibc_sul": "25400",
-        "ibc_sul_dessaz": "25403",        
+
+    # Export dos dfs
+
+    df_ipca_all = df_ipca_all.dropna(how="all")
+
+    df_ipca_all_out = df_ipca_all.reset_index().rename(columns={"index": "date"})
+    df_ipca_all_out
+
+    BASE_DIR = Path(__file__).resolve().parents[1]  # raiz do projeto
+    out_dir = BASE_DIR / "data" / "processed"
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    df_ipca_all_out.to_parquet(out_dir / "ipca_all.parquet", index=False)
+
+
+    #####################################################################################
+
+    # -----------------------------
+    # Coleta dados IBC-Br e crédito do SGS
+    # ----------------------------
+    ##Brasil 
+    ibc_br= sgs.get({'ibc_br' : '24363',
+                    'ibc_br_dessaz': '24364'},
+                start = '2014-03-31')
+    ibc_br
+
+    ##ufs 
+    ibc_uf = sgs.get(
+        {
+            "ibc_se": "25393",        
+            "ibc_se_dessaz": "25395",
+            "ibc_mg": "25379",
+            "ibc_mg_dessaz": "25380",
+            "ibc_rj": "25396",
+            "ibc_rj_dessaz": "25397",
+            "ibc_es": "25398",
+            "ibc_es_dessaz": "25399",
+            "ibc_sp": "25392",
+            "ibc_sp_dessaz": "25394",
+            "ibc_co": "25381",
+            "ibc_co_dessaz": "25382",
+            "ibc_go": "25383",
+            "ibc_go_dessaz": "25384",
+            "ibc_sul": "25400",
+            "ibc_sul_dessaz": "25403",        
             "ibc_sc": "25402",
             "ibc_sc_dessaz": "25405",
-        "ibc_pr": "25408",
-        "ibc_pr_dessaz": "25413",
-        "ibc_rs": "25401",
-        "ibc_rs_dessaz": "25404",       
-        "ibc_norte": "25406",
-        "ibc_norte_dessaz": "25407",        
-        "ibc_pa": "25409",
-        "ibc_pa_dessaz": "25410",
-        "ibc_am": "25411",
-        "ibc_am_dessaz": "25412",
-        "ibc_ne": "25388",
-        "ibc_ne_dessaz": "25389",
-        "ibc_ce": "25390",
-        "ibc_ce_dessaz": "25391",        
-        "ibc_ba": "25415",
-        "ibc_ba_dessaz": "25416",
-        "ibc_pe": "25417",
-        "ibc_pe_dessaz": "25418",
-    },
-    start="2014-01-31",
-)
-ibc_uf
+            "ibc_pr": "25408",
+            "ibc_pr_dessaz": "25413",
+            "ibc_rs": "25401",
+            "ibc_rs_dessaz": "25404",       
+            "ibc_norte": "25406",
+            "ibc_norte_dessaz": "25407",        
+            "ibc_pa": "25409",
+            "ibc_pa_dessaz": "25410",
+            "ibc_am": "25411",
+            "ibc_am_dessaz": "25412",
+            "ibc_ne": "25388",
+            "ibc_ne_dessaz": "25389",
+            "ibc_ce": "25390",
+            "ibc_ce_dessaz": "25391",        
+            "ibc_ba": "25415",
+            "ibc_ba_dessaz": "25416",
+            "ibc_pe": "25417",
+            "ibc_pe_dessaz": "25418",
+        },
+        start="2014-03-31",
+    )
+    ibc_uf
+    ibc_uf.columns
+
+    saldo_cred = sgs.get(
+        {
+            'credito_pf': '20570',
+            'credito_pj': '20543',
+            'credito_total': '20542'
+        },
+        start='2014-01-31'
+    )
+    saldo_cred
+
+    # inadimplencia anual
+    inadimplencia =  sgs.get(
+        {
+            'inadimplencia_total' : '21085',
+            'inadimplencia_pj' : '21086',
+            'inadimplencia_pf' : '21112',
+        },
+        start='2014-01-31'
+    )
+    inadimplencia
 
 
-saldo_cred = sgs.get(
-    {
-        'credito_pf': '20570',
-        'credito_pj': '20543',
-        'credito_total': '20542'
-    },
-    start='2014-01-31'
-)
-saldo_cred
-
-# inadimplencia anual
-inadimplencia =  sgs.get(
-    {
-        'inadimplencia_total' : '21085',
-        'inadimplencia_pj' : '21086',
-        'inadimplencia_pf' : '21112',
-    },
-    start='2014-01-31'
-)
-inadimplencia
+    # taxa de juros anual
+    taxa_de_juros = sgs.get(
+        {
+            'taxa_juros_pf' : '20748',
+            'taxa_juros_pj' : '20718',
+            'taxa_juros_total' : '20717',
+        },
+        start='2014-01-31'
+    )
+    taxa_de_juros
 
 
-# taxa de juros anual
-taxa_de_juros = sgs.get(
-    {
-        'taxa_juros_pf' : '20748',
-        'taxa_juros_pj' : '20718',
-        'taxa_juros_total' : '20717',
-    },
-    start='2014-01-31'
-)
-taxa_de_juros
+    df_sgs = [
+        ibc_br,
+        saldo_cred,
+        inadimplencia,
+        taxa_de_juros]
 
-
-df_sgs = [
-    ibc_br,
-    saldo_cred,
-    inadimplencia,
-    taxa_de_juros]
-
-df_sgs
-
-sgs_wide = reduce(
-    lambda left, right: left.join(right, how="outer"),
     df_sgs
-)
 
-sgs_wide=sgs_wide.reset_index()
-sgs_wide
+    sgs_wide = reduce(
+        lambda left, right: left.join(right, how="outer"),
+        df_sgs
+    )
 
-sgs_wide = sgs_wide.rename(columns={"Date": "date"})
-sgs_wide.dropna(inplace=True)
-sgs_wide.head()
-sgs_wide.tail()
+    sgs_wide=sgs_wide.reset_index()
+    sgs_wide
 
-BASE_DIR = Path(__file__).resolve().parents[1]  # raiz do projeto
-out_dir = BASE_DIR / "data" / "processed"
+    sgs_wide = sgs_wide.rename(columns={"Date": "date"})
+    sgs_wide.dropna(inplace=True)
+    sgs_wide.head()
+    sgs_wide.tail()
 
-out_dir.mkdir(parents=True, exist_ok=True)
+    BASE_DIR = Path(__file__).resolve().parents[1]  # raiz do projeto
+    out_dir = BASE_DIR / "data" / "processed"
 
-sgs_wide.to_parquet(out_dir / "sgs_dados.parquet", index=False)
+    out_dir.mkdir(parents=True, exist_ok=True)
 
-#exportação IBC-UF
+    sgs_wide.to_parquet(out_dir / "sgs_dados.parquet", index=False)
 
-BASE_DIR = Path(__file__).resolve().parents[1]  
-out_dir = BASE_DIR / "data" / "processed"
+    #exportação IBC-UF
 
-out_dir.mkdir(parents=True, exist_ok=True)
- 
-ibc_uf.to_parquet(out_dir / "ibc_uf.parquet", index=False)
+    BASE_DIR = Path(__file__).resolve().parents[1]
+    out_dir = BASE_DIR / "data" / "processed"
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    ibc_uf_out = ibc_uf.copy()
+
+    # Se 'Date' está no índice, traz para coluna
+    if isinstance(ibc_uf_out.index, pd.DatetimeIndex):
+        ibc_uf_out = ibc_uf_out.reset_index()
+
+    # Padroniza nome
+    if "Date" in ibc_uf_out.columns and "date" not in ibc_uf_out.columns:
+        ibc_uf_out = ibc_uf_out.rename(columns={"Date": "date"})
+
+    ibc_uf_out["date"] = pd.to_datetime(ibc_uf_out["date"], errors="coerce")
+
+    # Ordena e limpa
+    ibc_uf_out = ibc_uf_out.dropna(subset=["date"]).sort_values("date").reset_index(drop=True)
+
+    ibc_uf_out.to_parquet(out_dir / "ibc_uf.parquet", index=False)
+
+
+make_sgs()
 
 
 
@@ -394,12 +410,37 @@ ipp_long.to_parquet(out_dir / "ipp_m.parquet", index=False)
 #---------------------------------------------------------------------
 #   DADOS MENSAIS DA INDÚSTRIA, COMÉRCIO E SERVIÇOS - PMC, PMS e PIM
 #---------------------------------------------------------------------
-#PIM
+
+#PIM - Pesquisa Industrial Mensal (12 meses)
 
 
+#PIM -  (nivel)
+pim_n_raw = sidra.get_table(
+    table_code= 8888,
+    territorial_level='1',
+    ibge_territorial_code='1',
+    variable='12606',
+    period='all',
+    classifications={'544': '129314'},
+    header='n'
+)
+pim_n_raw
 
-#PMS - Pesquisa Mensal de Serviços
-pim_raw = sidra.get_table(
+
+#PIM - (dessazonalizada)
+pim_dessaz_raw = sidra.get_table(
+    table_code= 8888,
+    territorial_level='1',
+    ibge_territorial_code='1',
+    variable='12607',
+    period='all',
+    classifications={'544': '129314'},
+    header='n'
+)
+pim_dessaz_raw
+
+#PIM - (12 meses)
+pim_12_raw = sidra.get_table(
     table_code= 8888,
     territorial_level='1',
     ibge_territorial_code='1',
@@ -408,10 +449,38 @@ pim_raw = sidra.get_table(
     classifications={'544': '129314'},
     header='n'
 )
-pim_raw
+pim_12_raw
+
 #PMS - Pesquisa Mensal de Serviços
 
+#PMS - (nível)
+pms_n_raw = sidra.get_table(
+    table_code= 5906,
+    territorial_level='1',
+    ibge_territorial_code='1',
+    variable='7167',
+    period='all',
+    classifications={'11046': '56726'},
+    header='n'
+)
+pms_n_raw
+
+#PMS - Pesquisa Mensal de Serviços (dessazonalizada)
+
+pms_dessaz_raw = sidra.get_table(
+    table_code= 5906,
+    territorial_level='1',
+    ibge_territorial_code='1',
+    variable='7168',
+    period='all',
+    classifications={'11046': '56726'},
+    header='n'
+)
+pms_dessaz_raw
+
 ## PMS em nível (acumulado 12 meses)
+
+###BRASIL
 pms_raw_12 = sidra.get_table(
     table_code= 5906,
     territorial_level='1',
@@ -422,76 +491,73 @@ pms_raw_12 = sidra.get_table(
     header='n'
 )
 pms_raw_12
-
-## PMS Dessazonalizada
-### PMS em nível
-pms_raw_2 = sidra.get_table(
-    table_code= 5906,
-    territorial_level='1',
-    ibge_territorial_code='1',
-    variable='7168',
-    period='all',
-    classifications={'11046': '56726'},
-    header='n'
-)
-pms_raw_2
-
-### PMS dessazonalizada
-pms_raw_3 = sidra.get_table(
-    table_code= 5906,
-    territorial_level='1',
-    ibge_territorial_code='1',
-    variable='7168',
-    period='all',
-    classifications={'11046': '56726'},
-    header='n'
-)
-pms_raw_3
-
-pms12_long = tidy_sidra_monthly_single(pms_raw_12, value_name="pms_raw_12")
-pms12_long
-pm22_long = tidy_sidra_monthly_single(pms_raw_2, value_name="pms_raw_2")
-pm22_long
-pm23_long = tidy_sidra_monthly_single(pms_raw_3, value_name="pms_raw_3")
-pm23_long
-
-pm2_long = pms12_long.merge(pm22_long, on="date").merge(pm23_long, on="date")
-pm2_long
+###SC
 
 
-pim_long = tidy_sidra_monthly_single(pim_raw, value_name="pim")
-pms_long = pm2_long.rename(
-    columns={
-        "pms_raw_12": "pms_12m",
-        "pms_raw_2": "pms_nivel",
-        "pms_raw_3": "pms_dessaz",
-    }
-)
 
+#PMC - Pesquisa Mensal do Comércio
 
-#PMC
-pmc_raw = sidra.get_table(
+# PMC - (nível)
+pmc_n_raw = sidra.get_table(
     table_code= 8881,
     territorial_level='1',
+    ibge_territorial_code='1',
+    variable='7169',
+    period='all',
+    classifications={'11046':'56736'},
+    header='n'
+)
+pmc_n_raw
+
+# PMC - (dessazonalizada)
+pmc_dessaz_raw = sidra.get_table(
+    table_code= 8881,
+    territorial_level='1',
+    ibge_territorial_code='1',
+    variable='7170',
+    period='all',
+    classifications={'11046':'56736'},
+    header='n'
+)
+pmc_dessaz_raw
+
+#PMC - (12 meses)
+pmc_12_raw = sidra.get_table(
+    table_code= 8881,
+    territorial_level='1',  
     ibge_territorial_code='1',
     variable='11711',
     period='all',
     classifications={'11046':'56736'},
     header='n'
 )
-pmc_raw
+pmc_12_raw
 
-pmc_long = tidy_sidra_monthly_single(pmc_raw, value_name="pmc")
+pim_n = tidy_sidra_monthly_single(pim_n_raw, value_name="pim_nivel")
+pim_dessaz= tidy_sidra_monthly_single(pim_dessaz_raw, value_name="pim_dessaz")
+pim_12 = tidy_sidra_monthly_single(pim_12_raw, value_name="pim_12m")
+pms_n = tidy_sidra_monthly_single(pms_n_raw, value_name="pms_nivel")
+pms_dessaz = tidy_sidra_monthly_single(pms_dessaz_raw, value_name="pms_dessaz")
+pms_12 = tidy_sidra_monthly_single(pms_raw_12, value_name="pms_12m")
+pmc_n = tidy_sidra_monthly_single(pmc_n_raw, value_name="pmc_nivel")
+pmc_dessaz= tidy_sidra_monthly_single(pmc_dessaz_raw, value_name="pmc_dessaz")
+pmc_12 = tidy_sidra_monthly_single(pmc_12_raw, value_name="pmc_12m")
 
+# Agregando DFs
+df_ind_com_ser = [
+    pim_n,
+    pim_dessaz,
+    pim_12,
+    pms_n,
+    pms_dessaz,
+    pms_12,
+    pmc_n,
+    pmc_dessaz,
+    pmc_12,
+]
 
 
 #exportando os dados pim/pms/pmc
-
-df_ind_com_ser = [
-    pim_long,
-    pms_long,
-    pmc_long
-    ]
 
 df_ind_com_ser
 
@@ -499,19 +565,16 @@ df_ind_com_ser_2 = reduce(
     lambda left, right: pd.merge(left, right, on="date", how="outer"),
     df_ind_com_ser
 )
-df_ind_com_ser_final = df_ind_com_ser_2.copy()
-df_ind_com_ser_final.dropna(inplace=True)
-df_ind_com_ser_final
-
+df_ind_com_ser_2
 
 BASE_DIR = Path(__file__).resolve().parents[1]  # raiz do projeto
 out_dir = BASE_DIR / "data" / "processed"
 
 out_dir.mkdir(parents=True, exist_ok=True)
 
-df_ind_com_ser_final.to_parquet(out_dir / "indust_comer_serv.parquet", index=False)
+df_ind_com_ser_2.to_parquet(out_dir / "indust_comer_serv.parquet", index=False)
 
-#! Parei aqui
+
 # ---------------------------------------------------------
 # Dados Sócioeconômicos - SIDRA
 # ---------------------------------------------------------

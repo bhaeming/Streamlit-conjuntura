@@ -16,6 +16,8 @@ from building_features import sidra_quarter_code_to_date
 from building_features import tidy_sidra_ipp
 from building_features import tidy_ipca_grupos
 
+BASE_DIR = Path(__file__).resolve().parents[1]
+
 
 def make_sgs():
     ###################################################################

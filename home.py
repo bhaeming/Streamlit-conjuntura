@@ -15,7 +15,6 @@ PAGES = {
     "Preços ao consumidor e ao produtor": "pages/2_Precos.py",
     "Juros e crédito": "pages/3_Juros_e_credito.py",
     "Emprego e dados socioeconômicos": "pages/4_Empregos_dados_socioeconomicos.py",
-    "Balança comercial": "pages/5_Balanca_comercial.py",
 }
 
 def card(title: str, subtitle: str, target: str):
@@ -53,16 +52,6 @@ with c2:
     )
 
 st.divider()
-
-# Uma caixa em largura total
-with st.container(border=True):
-    st.subheader("Balança comercial (Em contrução)")
-    st.write("Exportações, importações, saldo e destaques por produto/mercado.")
-    if st.button("Abrir", key="open_trade"):
-        st.switch_page(PAGES["Balança comercial (Em contrução)"])
-
-st.divider()
-
 
 col1, col2 = st.columns([2, 1])
 

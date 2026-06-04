@@ -49,25 +49,25 @@ def ensure_month_end_index(df: pd.DataFrame) -> pd.DataFrame:
 
 # Funções de tratamento e transformação #
 
-def acc_12m_curve_rate(s: pd.Series) -> pd.Series:
-    """
-    Converte uma série mensal em % m/m para inflação acumulada em 12 meses (%),
-    via composição multiplicativa (rolling 12).
-    Retorna série alinhada ao índice original.
-    """
-    s = pd.to_numeric(s, errors="coerce")
-    return ((1 + s / 100).rolling(12).apply(np.prod, raw=True) - 1) * 100
+    def acc_12m_curve_rate(s: pd.Series) -> pd.Series:
+        """
+        Converte uma série mensal em % m/m para inflação acumulada em 12 meses (%),
+        via composição multiplicativa (rolling 12).
+        Retorna série alinhada ao índice original.
+        """
+        s = pd.to_numeric(s, errors="coerce")
+        return ((1 + s / 100).rolling(12).apply(np.prod, raw=True) - 1) * 100
 
 
-def add_12m_from_monthly_rates(df: pd.DataFrame, cols: list[str], suffix_12m: str = "_12m_calc") -> pd.DataFrame:
-    """
-    Para cada coluna em cols (mensal % m/m), cria uma coluna 12m composta.
-    """
-    out = df.copy()
-    for c in cols:
-        if c in out.columns:
-            out[f"{c}{suffix_12m}"] = acc_12m_curve_rate(out[c])
-    return out
+    def add_12m_from_monthly_rates(df: pd.DataFrame, cols: list[str], suffix_12m: str = "_12m_calc") -> pd.DataFrame:
+        """
+        Para cada coluna em cols (mensal % m/m), cria uma coluna 12m composta.
+        """
+        out = df.copy()
+        for c in cols:
+            if c in out.columns:
+                out[f"{c}{suffix_12m}"] = acc_12m_curve_rate(out[c])
+        return out
 
 #------------------------------------------------------------
 # Trata SIDRA  com colunas padrão

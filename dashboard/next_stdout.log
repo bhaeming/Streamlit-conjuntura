@@ -11,3 +11,22 @@
  ○ Compiling / ...
  GET / 200 in 10071ms
  GET / 200 in 84ms
+ GET / 200 in 98ms
+ GET / 200 in 192ms
+ ✓ Compiled /atividade in 8.6s (1786 modules)
+ GET /atividade 200 in 9438ms
+ GET /atividade 200 in 187ms
+ ○ Compiling /precos ...
+ ✓ Compiled /precos in 978ms (1788 modules)
+ GET /precos 200 in 1238ms
+ ○ Compiling /juros-credito ...
+ ✓ Compiled /juros-credito in 710ms (1790 modules)
+ GET /juros-credito 200 in 969ms
+ GET / 200 in 99ms
+ GET /juros-credito 200 in 98ms
+ ○ Compiling /trabalho ...
+ ✓ Compiled /trabalho in 2.9s (1792 modules)
+ GET /trabalho 200 in 3345ms
+ GET /trabalho 200 in 77ms
+ GET /atividade 200 in 98ms
+ GET / 200 in 98ms

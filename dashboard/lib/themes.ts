@@ -9,6 +9,7 @@ export const themes = [
     icon: Activity,
     color: "#087f5b",
     tint: "#e9f7f1",
+    source: "BCB/IBGE (2026)",
   },
   {
     href: "/precos",
@@ -18,6 +19,7 @@ export const themes = [
     icon: BadgeDollarSign,
     color: "#1677a8",
     tint: "#e9f5fa",
+    source: "IBGE/BCB (2026)",
   },
   {
     href: "/juros-credito",
@@ -27,6 +29,7 @@ export const themes = [
     icon: Landmark,
     color: "#176b87",
     tint: "#e9f3f6",
+    source: "BCB (2026)",
   },
   {
     href: "/trabalho",
@@ -36,5 +39,6 @@ export const themes = [
     icon: Users,
     color: "#2b8a3e",
     tint: "#edf8ee",
+    source: "IBGE (2026)",
   },
 ];

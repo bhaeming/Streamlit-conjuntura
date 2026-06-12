@@ -15,6 +15,7 @@ export function ThemeCard({ theme }: { theme: Theme }) {
       <span className="eyebrow">{theme.eyebrow}</span>
       <h2>{theme.title}</h2>
       <p>{theme.description}</p>
+      <small className="source-label">Fonte: {theme.source}</small>
       <span className="open-label">Explorar indicadores</span>
     </Link>
   );

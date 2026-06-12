@@ -49,25 +49,25 @@ def ensure_month_end_index(df: pd.DataFrame) -> pd.DataFrame:
 
 # Funções de tratamento e transformação #
 
-    def acc_12m_curve_rate(s: pd.Series) -> pd.Series:
-        """
-        Converte uma série mensal em % m/m para inflação acumulada em 12 meses (%),
-        via composição multiplicativa (rolling 12).
-        Retorna série alinhada ao índice original.
-        """
-        s = pd.to_numeric(s, errors="coerce")
-        return ((1 + s / 100).rolling(12).apply(np.prod, raw=True) - 1) * 100
+def acc_12m_curve_rate(s: pd.Series) -> pd.Series:
+    """
+    Converte uma série mensal em % m/m para inflação acumulada em 12 meses (%),
+    via composição multiplicativa (rolling 12).
+    Retorna série alinhada ao índice original.
+    """
+    s = pd.to_numeric(s, errors="coerce")
+    return ((1 + s / 100).rolling(12).apply(np.prod, raw=True) - 1) * 100
 
 
-    def add_12m_from_monthly_rates(df: pd.DataFrame, cols: list[str], suffix_12m: str = "_12m_calc") -> pd.DataFrame:
-        """
-        Para cada coluna em cols (mensal % m/m), cria uma coluna 12m composta.
-        """
-        out = df.copy()
-        for c in cols:
-            if c in out.columns:
-                out[f"{c}{suffix_12m}"] = acc_12m_curve_rate(out[c])
-        return out
+def add_12m_from_monthly_rates(df: pd.DataFrame, cols: list[str], suffix_12m: str = "_12m_calc") -> pd.DataFrame:
+    """
+    Para cada coluna em cols (mensal % m/m), cria uma coluna 12m composta.
+    """
+    out = df.copy()
+    for c in cols:
+        if c in out.columns:
+            out[f"{c}{suffix_12m}"] = acc_12m_curve_rate(out[c])
+    return out
 
 #------------------------------------------------------------
 # Trata SIDRA  com colunas padrão
@@ -141,7 +141,7 @@ def tidy_sidra_setores(df: pd.DataFrame) -> pd.DataFrame:
     return out
 
 #Tratamento IPP
-def tidy_sidra_ipp(df: pd.DataFrame) -> pd.DataFrame:
+def tidy_sidra_ipp(df: pd.DataFrame, label_col: str = "setor_ipp") -> pd.DataFrame:
     out = df.copy()
 
     # valor numérico (SIDRA às vezes vem como string)
@@ -151,13 +151,25 @@ def tidy_sidra_ipp(df: pd.DataFrame) -> pd.DataFrame:
     out["date"] = pd.to_datetime(out["D2C"].astype(str), format="%Y%m", errors="coerce") + pd.offsets.MonthEnd(0)
 
     # colunas-alvo
-    out = out.rename(columns={
-        "D4N": "setor_ipp",
+    rename_map = {
+        "D4C": "codigo_ipp",
+        "D4N": label_col,
         "V": "value",
-    })[["date", "setor_ipp","value"]]
+    }
+    out = out.rename(columns={k: v for k, v in rename_map.items() if k in out.columns})
+    keep_cols = ["date", label_col, "value"]
+    if "codigo_ipp" in out.columns:
+        keep_cols.insert(2, "codigo_ipp")
+    out = out[keep_cols]
 
     # limpeza básica
-    out = out.dropna(subset=["date", "setor_ipp", "value"]).sort_values(["setor_ipp", "date"]).reset_index(drop=True)
+    out[label_col] = (
+        out[label_col]
+        .astype(str)
+        .str.replace(r"^\d+\s*", "", regex=True)
+        .str.strip()
+    )
+    out = out.dropna(subset=["date", label_col, "value"]).sort_values([label_col, "date"]).reset_index(drop=True)
 
     return out
 

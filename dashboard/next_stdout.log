@@ -7,26 +7,23 @@
    - Network:      http://127.0.0.1:3000
 
  ✓ Starting...
- ✓ Ready in 2.2s
+ ✓ Ready in 2.4s
  ○ Compiling / ...
- GET / 200 in 10071ms
- GET / 200 in 84ms
- GET / 200 in 98ms
- GET / 200 in 192ms
- ✓ Compiled /atividade in 8.6s (1786 modules)
- GET /atividade 200 in 9438ms
- GET /atividade 200 in 187ms
+ ✓ Compiled / in 9.6s (652 modules)
+ GET / 200 in 10792ms
+ GET / 200 in 213ms
+ ○ Compiling /atividade ...
+ ✓ Compiled /atividade in 7.8s (1786 modules)
+ GET /atividade 200 in 8560ms
  ○ Compiling /precos ...
- ✓ Compiled /precos in 978ms (1788 modules)
- GET /precos 200 in 1238ms
+ ✓ Compiled /precos in 1305ms (1797 modules)
+ GET /precos 200 in 1652ms
  ○ Compiling /juros-credito ...
- ✓ Compiled /juros-credito in 710ms (1790 modules)
- GET /juros-credito 200 in 969ms
- GET / 200 in 99ms
- GET /juros-credito 200 in 98ms
+ ✓ Compiled /juros-credito in 1393ms (1805 modules)
+ GET /juros-credito 200 in 1702ms
  ○ Compiling /trabalho ...
- ✓ Compiled /trabalho in 2.9s (1792 modules)
- GET /trabalho 200 in 3345ms
- GET /trabalho 200 in 77ms
- GET /atividade 200 in 98ms
- GET / 200 in 98ms
+ ✓ Compiled /trabalho in 1638ms (1813 modules)
+ GET /trabalho 200 in 21884ms
+ GET /trabalho 200 in 15499ms
+ GET /trabalho 200 in 17884ms
+ GET /atividade 200 in 419ms

@@ -160,7 +160,8 @@ def make_sgs():
     )
     saldo_cred
 
-    # inadimplencia anual
+    # inadimplencia da carteira de credito com recursos livres (%)
+    # SGS 21085: Total | 21086: Pessoas juridicas | 21112: Pessoas fisicas
     inadimplencia =  sgs.get(
         {
             'inadimplencia_total' : '21085',
@@ -172,10 +173,11 @@ def make_sgs():
     inadimplencia
 
 
-    # taxa de juros anual
+    # taxa media de juros das operacoes de credito com recursos livres (% a.a.)
+    # SGS 20717: Total | 20718: Pessoas juridicas | 20740: Pessoas fisicas
     taxa_de_juros = sgs.get(
         {
-            'taxa_juros_pf' : '20748',
+            'taxa_juros_pf' : '20740',
             'taxa_juros_pj' : '20718',
             'taxa_juros_total' : '20717',
         },
@@ -211,6 +213,20 @@ def make_sgs():
     out_dir.mkdir(parents=True, exist_ok=True)
 
     sgs_wide.to_parquet(out_dir / "sgs_dados.parquet", index=False)
+
+    credito_condicoes = sgs_wide[
+        [
+            "date",
+            "taxa_juros_total",
+            "taxa_juros_pf",
+            "taxa_juros_pj",
+            "inadimplencia_total",
+            "inadimplencia_pf",
+            "inadimplencia_pj",
+        ]
+    ].copy()
+
+    credito_condicoes.to_parquet(out_dir / "credito_condicoes.parquet", index=False)
 
     #exportação IBC-UF
 
@@ -406,6 +422,26 @@ out_dir = BASE_DIR / "data" / "processed"
 out_dir.mkdir(parents=True, exist_ok=True)
 
 ipp_long.to_parquet(out_dir / "ipp_m.parquet", index=False)
+
+# IPP por atividade CNAE 2.0
+# O repositorio Painel-Infla--o usa a tabela 6904 (grandes categorias economicas).
+# Para a perspectiva por CNAE, a tabela correta do SIDRA e a 6903, classificacao 842.
+ipp_cnae = sidra.get_table(
+    table_code=6903,
+    territorial_level='1',
+    ibge_territorial_code='1',
+    variable='1394',
+    period='all',
+    classifications={
+        '842': 'all'
+    },
+    header='n'
+)
+
+ipp_cnae_long = tidy_sidra_ipp(ipp_cnae, label_col="cnae_ipp")
+ipp_cnae_long = ipp_cnae_long[ipp_cnae_long["date"] >= pd.Timestamp("2015-01-01")].reset_index(drop=True)
+
+ipp_cnae_long.to_parquet(out_dir / "ipp_cnae.parquet", index=False)
 
 
 
@@ -622,7 +658,7 @@ def tidy_sidra_brasil(df: pd.DataFrame, out_col: str) -> pd.DataFrame:
 # ---------------------------------------------------------
 # UF (nível 3)
 # ---------------------------------------------------------
-def tidy_sidra_desemp_uf(df: pd.DataFrame) -> pd.DataFrame:
+def tidy_sidra_desemp_uf(df: pd.DataFrame, value_name: str = "taxa_desemprego") -> pd.DataFrame:
     out = df.copy()
     out["V"] = pd.to_numeric(out["V"], errors="coerce")
     out["date"] = sidra_quarter_code_to_date(out["D2C"])
@@ -635,15 +671,15 @@ def tidy_sidra_desemp_uf(df: pd.DataFrame) -> pd.DataFrame:
         raise ValueError("Não encontrei a coluna de UF (D1N ou D1C) no dataframe do SIDRA.")
 
     out = (
-        out.rename(columns={"V": "taxa_desemprego"})
-           .loc[:, ["date", "uf", "taxa_desemprego"]]
-           .dropna(subset=["date", "uf", "taxa_desemprego"])
+        out.rename(columns={"V": value_name})
+           .loc[:, ["date", "uf", value_name]]
+           .dropna(subset=["date", "uf", value_name])
            .sort_values(["uf", "date"])
            .reset_index(drop=True)
     )
 
     # blindagem: 1 obs por (uf, date)
-    out = out.groupby(["uf", "date"], as_index=False)["taxa_desemprego"].mean()
+    out = out.groupby(["uf", "date"], as_index=False)[value_name].mean()
     out["trimestre"] = out["date"].dt.to_period("Q").astype(str)
 
     return out
@@ -670,6 +706,39 @@ desemp_uf = sidra.get_table(
     territorial_level="3",
     ibge_territorial_code="all",
     variable="4099",
+    period="all",
+    classifications="",
+    header="n",
+)
+
+# ocupacao UF
+ocup_uf = sidra.get_table(
+    table_code=6466,
+    territorial_level="3",
+    ibge_territorial_code="all",
+    variable="4097",
+    period="all",
+    classifications="",
+    header="n",
+)
+
+# renda media UF
+renda_uf = sidra.get_table(
+    table_code=5439,
+    territorial_level="3",
+    ibge_territorial_code="all",
+    variable="5932",
+    period="all",
+    classifications={"12029": "99383"},
+    header="n",
+)
+
+# informalidade UF
+infor_uf = sidra.get_table(
+    table_code=8529,
+    territorial_level="3",
+    ibge_territorial_code="all",
+    variable="12466",
     period="all",
     classifications="",
     header="n",
@@ -728,7 +797,20 @@ renda_media_long = tidy_sidra_brasil(renda, "renda_media")
 informalidade_long = tidy_sidra_brasil(infor, "informalidade")
 desalentadas_long = tidy_sidra_brasil(desalent, "desalentadas")
 
-desemprego_uf_long = tidy_sidra_desemp_uf(desemp_uf)
+desemprego_uf_long = tidy_sidra_desemp_uf(desemp_uf, "taxa_desemprego")
+ocupacao_uf_long = tidy_sidra_desemp_uf(ocup_uf, "taxa_ocupacao")
+renda_media_uf_long = tidy_sidra_desemp_uf(renda_uf, "renda_media")
+informalidade_uf_long = tidy_sidra_desemp_uf(infor_uf, "informalidade")
+
+socioeco_uf = reduce(
+    lambda left, right: pd.merge(left, right, on=["date", "uf", "trimestre"], how="outer"),
+    [
+        desemprego_uf_long,
+        ocupacao_uf_long,
+        renda_media_uf_long,
+        informalidade_uf_long,
+    ],
+).sort_values(["uf", "date"]).reset_index(drop=True)
 
 
 # ---------------------------------------------------------
@@ -762,3 +844,4 @@ out_dir.mkdir(parents=True, exist_ok=True)
 
 socioeco_wide.to_parquet(out_dir / "socioeconomico_quarterly.parquet", index=False)
 desemprego_uf_long.to_parquet(out_dir / "desemp_uf.parquet", index=False)
+socioeco_uf.to_parquet(out_dir / "socioeconomico_uf.parquet", index=False)
